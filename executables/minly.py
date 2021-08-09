@@ -7,6 +7,7 @@ import time
 import sched
 
 import dht22
+import sensorhub
 
 
 # Readout functions to run in regular intervals. Each function handles one
@@ -26,7 +27,7 @@ def readout_sensorhub(ut_str: str, filename: str):
     # print(f"`readout_sensorhub` called with "
     #       f"`ut_str` = {ut_str}, `filename` = "
     #       f"{filename}")
-    pass # Stub
+    sensorhub.readout_sensorhub(ut_str, filename)
 
 
 # Parameters for the script
@@ -34,8 +35,10 @@ path = "/home/pi/sensor-logging/data/minly"
 
 readout_functions = [readout_dht22, readout_sensorhub]
 readout_column_titles = [["temperature", "humidity"],
-        ["dht11_temperature", "dht11_humidity", "dht11_error",
-            "bmp280_temperature", "bmp280_pressure", "bmp280_error"]]
+    ["ntc_temperature", "ntc_overrange", "ntc_error", "dht11_temperature",
+        "dht11_humidity", "dht11_error", "bmp280_temperature",
+        "bmp280_pressure", "bmp280_error", "brightness", "brightness_overrange",
+        "brightness_error", "motion"]]
 readout_names = ["dht22", "sensorhub"]
 
 interval = 1 # Interval in seconds (integer)
