@@ -35,7 +35,7 @@ path = "/home/pi/sensor-logging/data/minly"
 
 readout_functions = [readout_dht22, readout_sensorhub]
 readout_column_titles = [["temperature", "humidity"],
-    ["ntc_temperature", "ntc_overrange", "ntc_error", "dht11_temperature",
+    ["ntc_temperature", "ntc_overrange", "ntc_missing", "dht11_temperature",
         "dht11_humidity", "dht11_error", "bmp280_temperature",
         "bmp280_pressure", "bmp280_error", "brightness", "brightness_overrange",
         "brightness_error", "motion"]]
