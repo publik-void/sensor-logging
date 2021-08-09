@@ -14,11 +14,11 @@ def readout_dht22(ut_str: str, filename: str):
     try:
         temperature = f"{dht.temperature}"
     except RuntimeError as error:
-        temperature = "n.a."
+        temperature = ""
     try:
         humidity = f"{dht.humidity}"
     except RuntimeError as error:
-        humidity = "n.a."
+        humidity = ""
     out.write(f"{ut_str}, {temperature}, {humidity}\n")
     out.close()
 
