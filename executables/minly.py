@@ -56,8 +56,15 @@ def run():
     """The program which is run at the start of the next minute"""
     # I work with GMT to avoid issues with daylight savings time
     gmt = time.gmtime()
-    gmt_str = (f"{gmt.tm_year}-{gmt.tm_mon}-{gmt.tm_mday}-"
-               f"{gmt.tm_hour}-{gmt.tm_min}-{gmt.tm_sec}")
+    # gmt_str = (f"{gmt.tm_year}-{gmt.tm_mon}-{gmt.tm_mday}-"
+    #            f"{gmt.tm_hour}-{gmt.tm_min}-{gmt.tm_sec}")
+    gmt_str = "-".join([
+        f"{gmt.tm_year}".zfill(4),
+        f"{gmt.tm_mon}".zfill(2),
+        f"{gmt.tm_mday}".zfill(2),
+        f"{gmt.tm_hour}".zfill(2),
+        f"{gmt.tm_min}".zfill(2),
+        f"{gmt.tm_sec}".zfill(2)])
 
     filenames = [os.path.join(path, f"{gmt_str}-{name}.csv")
                  for name in readout_names]

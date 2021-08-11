@@ -1,7 +1,6 @@
 import os
 
-path = os.path.join("/", "home", "pi", "sensor-logging", "data",
-        "minly-copy-delme")
+path = os.path.join("/", "home", "pi", "sensor-logging", "data", "minly")
 filenames = os.listdir(path)
 
 def pad_dates_in_filename(filename: str):
