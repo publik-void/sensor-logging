@@ -1,2 +1,4 @@
 data
 executables/__pycache__
+logs/*
+
