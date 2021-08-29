@@ -19,11 +19,9 @@ def readout_dht22(ut_str: str, filename: str):
         humidity = f"{dht.humidity}"
     except RuntimeError as error:
         humidity = ""
-    # Checking whether these are None does not seem to have any effect,
-    # nevertheless the output is None, sometimes. Hmm, I wonder why…
-    if temperature is None:
+    if temperature == "None":
         temperature = ""
-    if humidity is None:
+    if humidity == "None":
         humidity = ""
     out.write(f"{ut_str}, {temperature}, {humidity}\n")
     out.close()
