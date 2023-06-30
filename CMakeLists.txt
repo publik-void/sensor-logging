@@ -27,6 +27,6 @@ target_link_libraries(sensor-logging Threads::Threads)
 target_link_libraries(sensor-logging pigpiod_if2)
 
 # Create `platform.hpp` during CMake configuration time
-execute_process(COMMAND ${PROJECT_SOURCE_DIR}/script/print-platform-header.sh
-  OUTPUT_FILE ${PROJECT_SOURCE_DIR}/src/platform.hpp)
+execute_process(COMMAND ${PROJECT_SOURCE_DIR}/script/print-machine-include.sh
+  OUTPUT_FILE ${PROJECT_SOURCE_DIR}/src/machine.cpp)
 
