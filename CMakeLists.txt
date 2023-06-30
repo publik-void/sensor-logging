@@ -25,3 +25,8 @@ target_link_libraries(sensor-logging Threads::Threads)
 
 # Link to `pigpio`, specifically the daemon socket interface variant
 target_link_libraries(sensor-logging pigpiod_if2)
+
+# Create `platform.hpp` during CMake configuration time
+execute_process(COMMAND ${PROJECT_SOURCE_DIR}/script/print-platform-header.sh
+  OUTPUT_FILE ${PROJECT_SOURCE_DIR}/src/platform.hpp)
+
