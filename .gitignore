@@ -1,5 +1,5 @@
 .DS_Store
-data
-executables/__pycache__
-logs/*
+__pycache__
+/data
+/logs
 
