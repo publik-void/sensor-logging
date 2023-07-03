@@ -1,0 +1,56 @@
+{
+  "sensorhub" : {
+    "ntc_temperature" : {
+      "type" : "float",
+      "decimals" : 1
+    },
+    "ntc_overrange" : {
+      "type" : "bool",
+      "decimals" : 0
+    },
+    "ntc_missing" : {
+      "type" : "bool",
+      "decimals" : 0
+    },
+    "dht11_temperature" : {
+      "type" : "float",
+      "decimals" : 1
+    },
+    "dht11_humidity" : {
+      "type" : "float",
+      "decimals" : 1
+    },
+    "dht11_error" : {
+      "type" : "bool",
+      "decimals": 0
+    },
+    "bmp280_temperature" : {
+      "type" : "float",
+      "decimals" : 1
+    },
+    "bmp280_pressure" : {
+      "type" : "float",
+      "decimals" : 1
+    },
+    "bmp280_error" : {
+      "type" : "bool",
+      "decimals": 0
+    },
+    "brightness" : {
+      "type" : "float",
+      "decimals" : 1
+    },
+    "brightness_overrange" : {
+      "type" : "bool",
+      "decimals" : 0
+    },
+    "brightness_error" : {
+      "type" : "bool",
+      "decimals" : 0
+    },
+    "motion" : {
+      "type" : "float",
+      "decimals" : 2
+    }
+  }
+}
