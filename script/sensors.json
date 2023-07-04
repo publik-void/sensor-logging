@@ -2,55 +2,74 @@
   "sensorhub" : {
     "ntc_temperature" : {
       "type" : "float",
+      "aggregate" : "mean",
       "decimals" : 1
     },
     "ntc_overrange" : {
       "type" : "bool",
-      "decimals" : 0
+      "aggregate" : "max"
     },
-    "ntc_missing" : {
+    "ntc_error" : {
       "type" : "bool",
-      "decimals" : 0
+      "aggregate" : "min"
     },
     "dht11_temperature" : {
       "type" : "float",
+      "aggregate" : "mean",
       "decimals" : 1
     },
     "dht11_humidity" : {
       "type" : "float",
+      "aggregate" : "mean",
       "decimals" : 1
     },
     "dht11_error" : {
       "type" : "bool",
-      "decimals": 0
+      "aggregate" : "min"
     },
     "bmp280_temperature" : {
       "type" : "float",
+      "aggregate" : "mean",
       "decimals" : 1
     },
     "bmp280_pressure" : {
       "type" : "float",
+      "aggregate" : "mean",
       "decimals" : 1
     },
     "bmp280_error" : {
       "type" : "bool",
-      "decimals": 0
+      "aggregate" : "min"
     },
     "brightness" : {
       "type" : "float",
+      "aggregate" : "mean",
       "decimals" : 1
     },
     "brightness_overrange" : {
       "type" : "bool",
-      "decimals" : 0
+      "aggregate" : "max"
     },
     "brightness_error" : {
       "type" : "bool",
-      "decimals" : 0
+      "aggregate" : "min"
     },
     "motion" : {
       "type" : "float",
+      "aggregate" : "mean",
       "decimals" : 2
+    }
+  },
+  "dht22" : {
+    "temperature" : {
+      "type" : "float",
+      "aggregate" : "mean",
+      "decimals" : 1
+    },
+    "humidity" : {
+      "type" : "float",
+      "aggregate" : "mean",
+      "decimals" : 1
     }
   }
 }
