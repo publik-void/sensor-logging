@@ -3,6 +3,7 @@
     "ntc_temperature" : {
       "type" : "float",
       "aggregate" : "mean",
+      "width" : 3,
       "decimals" : 1
     },
     "ntc_overrange" : {
@@ -16,11 +17,13 @@
     "dht11_temperature" : {
       "type" : "float",
       "aggregate" : "mean",
+      "width" : 3,
       "decimals" : 1
     },
     "dht11_humidity" : {
       "type" : "float",
       "aggregate" : "mean",
+      "width" : 3,
       "decimals" : 1
     },
     "dht11_error" : {
@@ -30,11 +33,13 @@
     "bmp280_temperature" : {
       "type" : "float",
       "aggregate" : "mean",
+      "width" : 3,
       "decimals" : 1
     },
     "bmp280_pressure" : {
       "type" : "float",
       "aggregate" : "mean",
+      "width" : 8,
       "decimals" : 1
     },
     "bmp280_error" : {
@@ -44,6 +49,7 @@
     "brightness" : {
       "type" : "float",
       "aggregate" : "mean",
+      "width" : 5,
       "decimals" : 1
     },
     "brightness_overrange" : {
@@ -57,6 +63,7 @@
     "motion" : {
       "type" : "float",
       "aggregate" : "mean",
+      "width" : 1,
       "decimals" : 2
     }
   },
@@ -64,11 +71,13 @@
     "temperature" : {
       "type" : "float",
       "aggregate" : "mean",
+      "width" : 3,
       "decimals" : 1
     },
     "humidity" : {
       "type" : "float",
       "aggregate" : "mean",
+      "width" : 3,
       "decimals" : 1
     }
   }

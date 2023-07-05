@@ -55,37 +55,37 @@ def snippet_aggregation_step_ops():
       [](auto const &x0, auto const &x1){return std::max(x0, x1);}};
     ''')
 
-def snippet_write_field():
-  return textwrap.dedent('''\
-    template<class T>
-    std::ostream &write_field(std::ostream &out,
-        T const &field, std::optional<int> const decimals) {
-      if (decimals.has_value()) {
-        out << std::setprecision(decimals.value()) << std::fixed;
-      } else {
-        out << std::setprecision(cc::field_decimals_default)
-          << std::defaultfloat;
-      }
-      return out << field;
-    }
-
-    template<class T>
-    std::ostream &write_field(std::ostream &out,
-        std::optional<T> const &field, std::optional<int> const decimals) {
-      return field.has_value() ? write_field(out, field.value(), decimals)
-                               : out;
-    }
-
-    std::ostream &write_field(std::ostream &out,
-        std::string_view const &field, std::optional<int> const) {
-      return out << field;
-    }
-
-    std::ostream &write_field(std::ostream &out,
-        bool const &field, std::optional<int> const) {
-      return out << (field ? "1" : "0");
-    }
-    ''')
+# def snippet_write_field():
+#   return textwrap.dedent('''\
+#     template<class T>
+#     std::ostream &write_field(std::ostream &out,
+#         T const &field, std::optional<int> const decimals) {
+#       if (decimals.has_value()) {
+#         out << std::setprecision(decimals.value()) << std::fixed;
+#       } else {
+#         out << std::setprecision(cc::field_decimals_default)
+#           << std::defaultfloat;
+#       }
+#       return out << field;
+#     }
+#
+#     template<class T>
+#     std::ostream &write_field(std::ostream &out,
+#         std::optional<T> const &field, std::optional<int> const decimals) {
+#       return field.has_value() ? write_field(out, field.value(), decimals)
+#                                : out;
+#     }
+#
+#     std::ostream &write_field(std::ostream &out,
+#         std::string_view const &field, std::optional<int> const) {
+#       return out << field;
+#     }
+#
+#     std::ostream &write_field(std::ostream &out,
+#         bool const &field, std::optional<int> const) {
+#       return out << (field ? "1" : "0");
+#     }
+#     ''')
 
 def snippet_struct(sensor_name, sensor_params):
   str = f'struct {sensor_name} : public sensor {{\n'
@@ -182,33 +182,47 @@ def snippet_field_names(sensor_name, sensor_params):
 #   str += indent(f'}};\n')
 #   return str + f'}}\n'
 
-def snippet_write_fields(sensor_name, sensor_params):
-  str = f'std::ostream &write_fields(\n'
+def snippet_write_csv_fields(sensor_name, sensor_params):
+  str = f'std::ostream &write_csv_fields(\n'
   str += indent(f'std::ostream &out, {sensor_name} const data) {{\n', 2)
-  str += indent(f'auto const original_precision{{out.precision()}};')
+  str += indent(f'auto const original_precision{{out.precision()}};\n')
+  str += indent(f'auto const original_width{{out.width()}};\n')
+  str += indent(f'auto const original_flags{{out.flags()}};\n')
+  str += indent(f'out')
   is_first_entry = True
   for field_name, field_params in sensor_params.items():
     if is_first_entry:
       is_first_entry = False
     else:
-      str += indent(f'out << cc::csv_delimiter_default;\n')
-    str += indent(f'write_field(out, data.{field_name}, std::optional<int>{{')
+      str += indent(f'\n<< cc::csv_delimiter_string', 2)
     if "decimals" in field_params:
-      str += f'{field_params["decimals"]}'
-    str += f'}});\n'
-  str += indent(f'return out << std::setprecision(original_precision)\n')
-  str += indent(f'<< std::defaultfloat << std::endl;\n', 2)
+      str += indent(f'\n<< std::setprecision({field_params["decimals"]}) '
+        f'<< std::fixed', 2)
+    else:
+      str += indent(f'\n<< std::setprecision(cc::field_decimals_default) '
+        f'<< std::defaultfloat', 2)
+    if "width" in field_params:
+      width = field_params["width"]
+      if "decimals" in field_params:
+        width += 1 + field_params["decimals"]
+      str += indent(f'\n<< std::setw({width})', 2)
+    str += indent(f'\n<< CSVWrapper{{data.{field_name}}}', 2)
+  str += f';\n'
+  str += indent(f'out.precision(original_precision);\n')
+  str += indent(f'out.width(original_width);\n')
+  str += indent(f'out.flags(original_flags);\n')
+  str += indent(f'return out << std::endl;\n')
   return str + f'}}\n'
 
-def snippet_write_field_names():
+def snippet_write_csv_field_names():
   return textwrap.dedent('''\
     template<class T>
-    std::ostream &write_field_names(std::ostream &out, T const &data) {
+    std::ostream &write_csv_field_names(std::ostream &out, T const &data) {
       auto const &sensor_name{name(data)};
       bool is_first_entry = true;
       for (auto const &field_name : field_names(data)) {
         if (is_first_entry) is_first_entry = false;
-        else out << cc::csv_delimiter_default;
+        else out << cc::csv_delimiter_string;
         out << "\\"" << sensor_name << "_" << field_name << "\\"";
       }
       return out << std::endl;
@@ -233,8 +247,9 @@ def sensors_include(sensors):
 
   str += f'namespace cc {{\n' + sep
   str += indent(f'int constexpr field_decimals_default{{6u}};\n' + sep)
-  str += indent(
-    f'std::string_view constexpr csv_delimiter_default{{", "}};\n' + sep)
+  # str += indent(f'std::string_view constexpr csv_delimiter_string{{", "}};\n')
+  # str += indent(f'std::string_view constexpr csv_false_string{{"0"}};\n')
+  # str += indent(f'std::string_view constexpr csv_true_string{{"1"}};\n' + sep)
   str += f'}} // namespace cc\n' + sep
 
   str += f'namespace sensors {{\n' + sep
@@ -243,15 +258,15 @@ def sensors_include(sensors):
   str += indent(snippet_bool_as_csv_string() + sep)
   # str += indent(snippet_optional_apply() + sep)
   str += indent(snippet_aggregation_step_ops() + sep)
-  str += indent(snippet_write_field() + sep)
+  # str += indent(snippet_write_field() + sep)
 
   for snippet in [snippet_struct, snippet_aggregation_state,
       snippet_aggregation_step, snippet_aggregation_finish, snippet_name,
-      snippet_field_names, snippet_write_fields]:
+      snippet_field_names, snippet_write_csv_fields]:
     for sensor_name, sensor_params in sensors.items():
       str += indent(snippet(sensor_name, sensor_params) + sep)
 
-  str += indent(snippet_write_field_names() + sep)
+  str += indent(snippet_write_csv_field_names() + sep)
 
   return str + f'}} // namespace sensors\n'
 

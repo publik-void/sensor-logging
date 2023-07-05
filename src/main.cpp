@@ -7,6 +7,15 @@
 #include <string_view>
 #include <cstdint>
 #include <cstdlib>
+#include <csignal>
+#include <atomic>
+
+// TODO: Replace `#include` directives with `import` statements. On Debian
+// Bullseye, which is still the basis for the current Raspberry Pi OS at the
+// time of writing this comment, the GCC version is too old to support the use
+// of modules. I could perhaps rely on backports or clang, but I think I won't
+// mess around with those options for now. but maybe I'll update to Debian
+// Bookworm when it is possible, which surely comes with a newer GCC version.
 
 extern "C" {
   #include <pigpiod_if2.h>
@@ -21,7 +30,34 @@ namespace cc { // compile-time constants
   std::chrono::milliseconds constexpr sampling_interval{300};
   std::chrono::milliseconds constexpr sleeping_{10};
   unsigned constexpr samples_per_aggregate{5u};
-  unsigned constexpr aggregates_per_run{4u};
+  unsigned constexpr aggregates_per_run{600u};
+
+  std::string_view constexpr csv_delimiter_string{", "};
+  std::string_view constexpr csv_false_string{"0"};
+  std::string_view constexpr csv_true_string{"1"};
+
+  int constexpr exit_code_success{0};
+  int constexpr exit_code_error{1};
+  int constexpr exit_code_interrupt{130};
+}
+
+template<typename T>
+struct CSVWrapper {
+  T const &x;
+};
+
+template<typename T>
+std::ostream& operator<<(std::ostream& os, CSVWrapper<T> const &x) {
+  return os << x.x;
+}
+template<typename T>
+std::ostream& operator<<(std::ostream& os,
+    CSVWrapper<std::optional<T>> const &x) {
+  return x.x.has_value() ? (os << CSVWrapper{x.x.value()})
+                         : os << ""; // Still need to call `<<` e.g. for `setw`
+}
+std::ostream& operator<<(std::ostream& os, CSVWrapper<bool> const &x) {
+  return os << (x.x ? cc::csv_true_string : cc::csv_false_string);
 }
 
 // NOTE: `optional_apply` could perhaps be defined as a variadic template
@@ -61,10 +97,12 @@ struct Pi {
           << ": " << pigpio_error(this->handle) << std::endl;
       }
     }
+    //std::cout << "Pi constructed" << std::endl;
   }
 
   ~Pi() {
     if (this->handle >= 0) pigpio_stop(this->handle);
+    //std::cout << "Pi destructed" << std::endl;
   }
 };
 
@@ -78,13 +116,19 @@ struct I2C {
   I2C(int const pi_handle, unsigned const bus,
       unsigned const addr, unsigned const flags = 0u) : 
       handle{i2c_open(pi_handle, bus, addr, flags)}, pi_handle{pi_handle} {
-    if (this->handle < 0) if constexpr (cc::log_errors) std::cerr
-      << "Error opening I2C device on "
-      << "Pi " << pi_handle
-      << ", bus 0x" << std::hex << bus << std::dec
-      << ", address 0x" << std::hex << addr << std::dec
-      << ", flags 0x" << std::hex << flags << std::dec
-      << ": " << pigpio_error(this->handle) << std::endl;
+    if (this->handle < 0) if constexpr (cc::log_errors) {
+      auto const original_flags{std::cerr.flags()};
+      std::cerr
+        << "Error opening I2C device on "
+        << "Pi " << pi_handle
+        << std::hex << std::showbase
+        << ", bus " << bus
+        << ", address " << addr
+        << ", flags " << flags
+        << ": " << pigpio_error(this->handle) << std::endl;
+      std::cerr.flags(original_flags);
+    }
+    //std::cout << "I2C constructed" << std::endl;
   }
 
   ~I2C() {
@@ -95,6 +139,7 @@ struct I2C {
         << "Pi " << pi_handle
         << ": " << pigpio_error(response) << std::endl;
     }
+    //std::cout << "I2C destructed" << std::endl;
   }
 };
 
@@ -248,13 +293,24 @@ auto const integral(std::chrono::time_point<Clock, Duration> const &time_point){
     time_point.time_since_epoch()).count();
 }
 
+// Unnamed namespace for internal linkage
+// As far as I can tell, this basically makes definitions private to the
+// translation unit and is preferred over static variables.
+namespace {
+  std::atomic_bool quit_early{false};
+  void graceful_quit_on_signal(int) { quit_early = true; }
+}
+
 //int main(int argc, char *argv[]) {
 int main() {
+  std::signal(SIGINT , graceful_quit_on_signal);
+  std::signal(SIGTERM, graceful_quit_on_signal);
+
   Pi const pi{};
-  if (errored(pi)) return 1;
+  if (errored(pi)) return cc::exit_code_error;
 
   I2C const i2c{pi, 0x1u, 0x17u};
-  if (errored(i2c)) return 1;
+  if (errored(i2c)) return cc::exit_code_error;
 
   std::chrono::high_resolution_clock const clock{};
 
@@ -272,11 +328,13 @@ int main() {
     sensors::sensorhub a0{};
     sensors::sensorhub_state s0{};
 
-    //sensors::write_field_names(std::cout, a0);
+    //sensors::write_csv_field_names(std::cout, a0);
 
     for (unsigned sample_index{0u};
         sample_index < cc::samples_per_aggregate;
         ++sample_index) {
+
+      if (quit_early) return cc::exit_code_interrupt;
 
       //std::cout
       //  << "Aggregate index " << aggregate_index
@@ -285,7 +343,7 @@ int main() {
 
       auto const x0{sensors::sample_sensorhub(pi, i2c)};
       std::tie(a0, s0) = aggregation_step(a0, s0, x0);
-      //sensors::write_fields(std::cout, x0);
+      //sensors::write_csv_fields(std::cout, x0);
 
       //int GPIO{4};
       //int level{gpio_read(pi, GPIO)};
@@ -293,7 +351,7 @@ int main() {
 
       if ((sample_index + 1u) == cc::samples_per_aggregate) {
         a0 = aggregation_finish(a0, s0);
-        sensors::write_fields(std::cout, a0);
+        sensors::write_csv_fields(std::cout, a0);
       }
 
       std::this_thread::sleep_until(time_reference + (
@@ -302,5 +360,5 @@ int main() {
     }
   }
 
-  return 0;
+  return cc::exit_code_success;
 }
