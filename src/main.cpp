@@ -304,6 +304,28 @@ namespace sensors {
       brightness_error,
       motion};
   }
+
+  dht22 sample_dht22(DHT const &dht) {
+    // The DHTXXD library provides two ways of reading data:
+    // * Read periodically in separate thread and set a flag to indicate that
+    //   new data are available. This flag is then reset when the data are
+    //   retrieved.
+    // * Read manually. In this case the flag (accessed through `DHTXXD_ready`)
+    //   can be ignored. The comments in the library source files suggest not
+    //   reading a DHT22 more often than every 3 seconds and a DHT11 not more
+    //   often than every second. If a manual read is attempted too early, the
+    //   status field of the data will indicate a timeout, and otherwise nothing
+    //   bad should happen, except that the current thread may block for a short
+    //   amount of time.
+    // I am choosing to go with the second option here. This means I need to
+    // manage the frequency with which this function is called myself.
+    DHTXXD_manual_read(dht);
+    auto const data{DHTXXD_data(dht)};
+
+    return (data.status == DHT_GOOD)
+      ? dht22{{}, {data.temperature}, {data.humidity}}
+      : dht22{};
+  }
 }
 
 // Returns a tick count since the epoch for the given time point
@@ -342,9 +364,6 @@ int main() {
 
   //std::cout << integral(time_reference) << std::endl;
 
-  //unsigned constexpr samples_per_run{
-  //  cc::samples_per_aggregate * cc::aggregates_per_run};
-
   for (unsigned aggregate_index{0u};
       aggregate_index < cc::aggregates_per_run;
       ++aggregate_index) {
@@ -352,24 +371,17 @@ int main() {
     sensors::sensorhub a0{};
     sensors::sensorhub_state s0{};
 
+    sensors::dht22 a1{};
+    sensors::dht22_state s1{};
+
     //sensors::write_csv_field_names(std::cout, a0);
+    //sensors::write_csv_field_names(std::cout, a1);
 
     for (unsigned sample_index{0u};
         sample_index < cc::samples_per_aggregate;
         ++sample_index) {
 
       if (quit_early) return cc::exit_code_interrupt;
-
-      auto ready{DHTXXD_ready(dht)};
-      auto dht_data{DHTXXD_data(dht)};
-      std::cout
-        << "ready: " << ready
-        << ", temperature: " << dht_data.temperature
-        << ", humidity: " << dht_data.humidity
-        << ", timestamp: " << dht_data.timestamp
-        << ", status: " << dht_data.status
-        << std::endl;;
-      DHTXXD_manual_read(dht);
 
       //std::cout
       //  << "Aggregate index " << aggregate_index
@@ -378,15 +390,16 @@ int main() {
 
       auto const x0{sensors::sample_sensorhub(pi, i2c)};
       std::tie(a0, s0) = aggregation_step(a0, s0, x0);
-      //sensors::write_csv_fields(std::cout, x0);
 
-      //int GPIO{4};
-      //int level{gpio_read(pi, GPIO)};
-      //printf("GPIO %d is %d\n", GPIO, level);
+      auto const x1{sensors::sample_dht22(dht)};
+      std::tie(a1, s1) = aggregation_step(a1, s1, x1);
 
       if ((sample_index + 1u) == cc::samples_per_aggregate) {
         a0 = aggregation_finish(a0, s0);
         sensors::write_csv_fields(std::cout, a0);
+
+        a1 = aggregation_finish(a1, s1);
+        sensors::write_csv_fields(std::cout, a1);
       }
 
       auto const next_time_point{time_reference + cc::sampling_interval *

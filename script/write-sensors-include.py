@@ -111,7 +111,8 @@ def snippet_aggregation_step(sensor_name, sensor_params):
     str += indent(f'aggregate.{field_name}, sample.{field_name})}};\n', 2)
     if field_params["aggregate"] in ["mean"]:
       str += indent(
-        f'auto const {field_name}_count{{state.{field_name}_count + 1u}};\n')
+        f'auto const {field_name}_count{{state.{field_name}_count + \n')
+      str += indent(f'(sample.{field_name}.has_value() ? 1u : 0u)}};\n', 2)
 
   str += indent(
     f'\nreturn std::pair<{sensor_name}, {sensor_name}_state>{{{{\n')
