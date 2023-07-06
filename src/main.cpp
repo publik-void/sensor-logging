@@ -1,7 +1,5 @@
 #include <iostream>
 #include <ios>
-#include <chrono>
-#include <thread>
 #include <optional>
 #include <tuple>
 #include <string_view>
@@ -9,6 +7,10 @@
 #include <cstdlib>
 #include <csignal>
 #include <atomic>
+#include <mutex>
+#include <condition_variable>
+#include <thread>
+#include <chrono>
 
 // TODO: Replace `#include` directives with `import` statements. On Debian
 // Bullseye, which is still the basis for the current Raspberry Pi OS at the
@@ -19,6 +21,7 @@
 
 extern "C" {
   #include <pigpiod_if2.h>
+  #include "DHTXXD.h"
 }
 
 #include "machine.cpp"
@@ -28,7 +31,6 @@ namespace cc { // compile-time constants
   bool constexpr log_errors{true};
 
   std::chrono::milliseconds constexpr sampling_interval{300};
-  std::chrono::milliseconds constexpr sleeping_{10};
   unsigned constexpr samples_per_aggregate{5u};
   unsigned constexpr aggregates_per_run{600u};
 
@@ -140,6 +142,24 @@ struct I2C {
         << ": " << pigpio_error(response) << std::endl;
     }
     //std::cout << "I2C destructed" << std::endl;
+  }
+};
+
+struct DHT {
+  DHTXXD_t * const dht;
+  operator DHTXXD_t * () const { return this->dht; }
+
+  DHT(DHT const &) = delete;
+
+  DHT(int const pi_handle, int const gpio_index, int const dht_model = DHTAUTO,
+      DHTXXD_CB_t callback = nullptr) :
+      dht{DHTXXD(pi_handle, gpio_index, dht_model, callback)} {
+    //std::cout << "DHT constructed" << std::endl;
+  }
+
+  ~DHT() {
+    DHTXXD_cancel(this->dht);
+    //std::cout << "DHT destructed" << std::endl;
   }
 };
 
@@ -298,19 +318,23 @@ auto const integral(std::chrono::time_point<Clock, Duration> const &time_point){
 // translation unit and is preferred over static variables.
 namespace {
   std::atomic_bool quit_early{false};
-  void graceful_quit_on_signal(int) { quit_early = true; }
+  std::condition_variable cv;
+  std::mutex cv_mutex;
+  void graceful_exit(int const = 0) { quit_early = true; cv.notify_all(); }
 }
 
 //int main(int argc, char *argv[]) {
 int main() {
-  std::signal(SIGINT , graceful_quit_on_signal);
-  std::signal(SIGTERM, graceful_quit_on_signal);
+  std::signal(SIGINT , graceful_exit);
+  std::signal(SIGTERM, graceful_exit);
 
   Pi const pi{};
   if (errored(pi)) return cc::exit_code_error;
 
   I2C const i2c{pi, 0x1u, 0x17u};
   if (errored(i2c)) return cc::exit_code_error;
+
+  DHT const dht{pi, 4, DHTXX};
 
   std::chrono::high_resolution_clock const clock{};
 
@@ -336,6 +360,17 @@ int main() {
 
       if (quit_early) return cc::exit_code_interrupt;
 
+      auto ready{DHTXXD_ready(dht)};
+      auto dht_data{DHTXXD_data(dht)};
+      std::cout
+        << "ready: " << ready
+        << ", temperature: " << dht_data.temperature
+        << ", humidity: " << dht_data.humidity
+        << ", timestamp: " << dht_data.timestamp
+        << ", status: " << dht_data.status
+        << std::endl;;
+      DHTXXD_manual_read(dht);
+
       //std::cout
       //  << "Aggregate index " << aggregate_index
       //  << ", sample index " << sample_index
@@ -354,9 +389,10 @@ int main() {
         sensors::write_csv_fields(std::cout, a0);
       }
 
-      std::this_thread::sleep_until(time_reference + (
-          (aggregate_index * cc::samples_per_aggregate + sample_index + 1u) *
-        cc::sampling_interval));
+      auto const next_time_point{time_reference + cc::sampling_interval *
+        (aggregate_index * cc::samples_per_aggregate + sample_index + 1u)};
+      std::unique_lock<std::mutex> lk(cv_mutex);
+      cv.wait_until(lk, next_time_point);
     }
   }
 
