@@ -164,9 +164,12 @@ DHT44 |      |      |      |      |      |
    if (self->cb) (self->cb)(self->_data);
 }
 
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-parameter"
 static void _cb(
    int pi, unsigned gpio, unsigned level, uint32_t tick, void *user)
 {
+#pragma GCC diagnostic pop
 
    DHTXXD_t *self=user;
    int edge_len;
