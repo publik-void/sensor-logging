@@ -1,16 +1,20 @@
 #include <iostream>
 #include <ios>
+#include <iomanip>
 #include <optional>
 #include <tuple>
 #include <string_view>
 #include <cstdint>
-#include <cstdlib>
+#include <cinttypes>
 #include <csignal>
+#include <cstdlib>
+#include <cmath>
 #include <atomic>
 #include <mutex>
 #include <condition_variable>
 #include <thread>
 #include <chrono>
+#include <ratio>
 
 // TODO: Replace `#include` directives with `import` statements. On Debian
 // Bullseye, which is still the basis for the current Raspberry Pi OS at the
@@ -34,6 +38,12 @@ namespace cc { // compile-time constants
   unsigned constexpr samples_per_aggregate{5u};
   unsigned constexpr aggregates_per_run{600u};
 
+  using timestamp_duration_t = std::chrono::milliseconds;
+  int constexpr timestamp_width{10};
+  int constexpr timestamp_decimals{2};
+
+  int constexpr field_decimals_default{6};
+
   std::string_view constexpr csv_delimiter_string{", "};
   std::string_view constexpr csv_false_string{"0"};
   std::string_view constexpr csv_true_string{"1"};
@@ -49,18 +59,38 @@ struct CSVWrapper {
 };
 
 template<typename T>
-std::ostream& operator<<(std::ostream& os, CSVWrapper<T> const &x) {
-  return os << x.x;
+std::ostream& operator<<(std::ostream& out, CSVWrapper<T> const &x) {
+  return out << x.x;
 }
 template<typename T>
-std::ostream& operator<<(std::ostream& os,
+std::ostream& operator<<(std::ostream& out,
     CSVWrapper<std::optional<T>> const &x) {
-  return x.x.has_value() ? (os << CSVWrapper{x.x.value()})
-                         : os << ""; // Still need to call `<<` e.g. for `setw`
+  return x.x.has_value() ? (out << CSVWrapper{x.x.value()})
+                         : out << ""; // Still need to call `<<` e.g. for `setw`
 }
-std::ostream& operator<<(std::ostream& os, CSVWrapper<bool> const &x) {
-  return os << (x.x ? cc::csv_true_string : cc::csv_false_string);
+std::ostream& operator<<(std::ostream& out, CSVWrapper<bool> const &x) {
+  return out << (x.x ? cc::csv_true_string : cc::csv_false_string);
 }
+template<class Rep, std::intmax_t Num, std::intmax_t Denom>
+std::ostream& operator<<(std::ostream& out,
+    CSVWrapper<std::chrono::duration<Rep, std::ratio<Num, Denom>>> const &x) {
+  auto const original_width{out.width()};
+  auto seconds{std::imaxdiv(x.x.count() * Num, Denom)};
+  out << std::setw(cc::timestamp_width) << seconds.quot;
+  if constexpr (cc::timestamp_decimals > 0) {
+    auto const original_fill{out.fill()};
+    auto constexpr timestamp_den{static_cast<std::intmax_t>(
+      std::pow(10, cc::timestamp_decimals))};
+    auto const fractional{
+      std::imaxdiv(seconds.rem * timestamp_den, Denom).quot};
+    out << "." << std::setw(cc::timestamp_decimals) << std::setfill('0')
+      << fractional;
+    out.fill(original_fill);
+  }
+  out.width(original_width);
+  return out;
+}
+
 
 // NOTE: `optional_apply` could perhaps be defined as a variadic template
 // and function, but let's keep it simple for now. C++23 also has something like
@@ -200,7 +230,18 @@ namespace sensors {
   // Sampling functions, written here manually, because machine-generating them
   // would involve a lot of complexity for little gain at my scale of operation.
 
-  sensorhub sample_sensorhub(int const pi_handle, int const i2c_handle) {
+  template<typename Clock>
+  sensor sample_sensor(Clock &clock) {
+    // NOTE: The clock determines the epoch start. I have to make sure to use
+    // this with a clock that uses the unix time epoch.
+    auto const timestamp{std::chrono::duration_cast<cc::timestamp_duration_t>(
+      clock.now().time_since_epoch())};
+    return sensor{std::optional{timestamp}};
+  }
+
+  template<typename Clock>
+  sensorhub sample_sensorhub(Clock &clock,
+      int const pi_handle, int const i2c_handle) {
     unsigned constexpr reg_ntc_temperature   {0x01u};
     unsigned constexpr reg_brightness_0      {0x02u};
     unsigned constexpr reg_brightness_1      {0x03u};
@@ -289,7 +330,9 @@ namespace sensors {
         return (x == 1) ? 1.f : 0.f;
       }, read(reg_motion))};
 
-    return sensorhub{{},
+    sensor const base_sample{sample_sensor(clock)};
+
+    return sensorhub{base_sample,
       ntc_temperature,
       ntc_overrange,
       ntc_error,
@@ -305,7 +348,8 @@ namespace sensors {
       motion};
   }
 
-  dht22 sample_dht22(DHT const &dht) {
+  template<typename Clock>
+  dht22 sample_dht22(Clock &clock, DHT const &dht) {
     // The DHTXXD library provides two ways of reading data:
     // * Read periodically in separate thread and set a flag to indicate that
     //   new data are available. This flag is then reset when the data are
@@ -322,17 +366,12 @@ namespace sensors {
     DHTXXD_manual_read(dht);
     auto const data{DHTXXD_data(dht)};
 
-    return (data.status == DHT_GOOD)
-      ? dht22{{}, {data.temperature}, {data.humidity}}
-      : dht22{};
-  }
-}
+    sensor const base_sample{sample_sensor(clock)};
 
-// Returns a tick count since the epoch for the given time point
-template<class TickPeriod = std::chrono::seconds, class Clock, class Duration>
-auto const integral(std::chrono::time_point<Clock, Duration> const &time_point){
-  return std::chrono::duration_cast<TickPeriod>(
-    time_point.time_since_epoch()).count();
+    return (data.status == DHT_GOOD)
+      ? dht22{base_sample, {data.temperature}, {data.humidity}}
+      : dht22{base_sample, {}, {}};
+  }
 }
 
 // Unnamed namespace for internal linkage
@@ -362,7 +401,8 @@ int main() {
 
   auto const time_reference{clock.now()};
 
-  //std::cout << integral(time_reference) << std::endl;
+  sensors::write_csv_field_names(std::cout, sensors::sensorhub{});
+  sensors::write_csv_field_names(std::cout, sensors::dht22{});
 
   for (unsigned aggregate_index{0u};
       aggregate_index < cc::aggregates_per_run;
@@ -373,9 +413,6 @@ int main() {
 
     sensors::dht22 a1{};
     sensors::dht22_state s1{};
-
-    //sensors::write_csv_field_names(std::cout, a0);
-    //sensors::write_csv_field_names(std::cout, a1);
 
     for (unsigned sample_index{0u};
         sample_index < cc::samples_per_aggregate;
@@ -388,10 +425,10 @@ int main() {
       //  << ", sample index " << sample_index
       //  << std::endl;
 
-      auto const x0{sensors::sample_sensorhub(pi, i2c)};
+      auto const x0{sensors::sample_sensorhub(clock, pi, i2c)};
       std::tie(a0, s0) = aggregation_step(a0, s0, x0);
 
-      auto const x1{sensors::sample_dht22(dht)};
+      auto const x1{sensors::sample_dht22(clock, dht)};
       std::tie(a1, s1) = aggregation_step(a1, s1, x1);
 
       if ((sample_index + 1u) == cc::samples_per_aggregate) {

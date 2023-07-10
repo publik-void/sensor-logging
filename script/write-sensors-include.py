@@ -2,8 +2,8 @@ import os
 import json
 import textwrap
 
-def indent(str, n = 1):
-  return textwrap.indent(str, "  " * n)
+def indent(str, n = 1, predicate = None):
+  return textwrap.indent(str, "  " * n, predicate)
 
 # def expand(sensors):
 #   "Bring JSON spec into a canonical form"
@@ -16,10 +16,24 @@ def indent(str, n = 1):
 
 def snippet_bool_as_csv_string():
   return textwrap.dedent('''\
-    std::string_view bool_as_csv_string(bool const x) {
-      return std::string_view{x ? "1" : "0"};
+    std::string bool_as_csv_string(bool const x) {
+      return std::string{x ? "1" : "0"};
     }
     ''')
+
+# def snippet_struct_sensor():
+#   return textwrap.dedent('''\
+#     struct sensor {
+#       std::optional<cc::timestamp_duration_t> timestamp{};
+#     };
+#     ''')
+
+# def snippet_struct_sensor_state():
+#   return textwrap.dedent('''\
+#     struct sensor_state {
+#       unsigned timestamp_count{0u};
+#     };
+#     ''')
 
 # def snippet_optional_apply():
 #   return textwrap.dedent('''\
@@ -77,7 +91,7 @@ def snippet_aggregation_step_ops():
 #     }
 #
 #     std::ostream &write_field(std::ostream &out,
-#         std::string_view const &field, std::optional<int> const) {
+#         std::string const &field, std::optional<int> const) {
 #       return out << field;
 #     }
 #
@@ -88,13 +102,19 @@ def snippet_aggregation_step_ops():
 #     ''')
 
 def snippet_struct(sensor_name, sensor_params):
-  str = f'struct {sensor_name} : public sensor {{\n'
+  str = f'struct {sensor_name} '
+  if sensor_name != "sensor":
+    str += f': public sensor '
+  str += f'{{\n'
   for field_name, field_params in sensor_params.items():
     str += indent(f'std::optional<{field_params["type"]}> {field_name}{{}};\n')
   return str + f'}};\n'
 
-def snippet_aggregation_state(sensor_name, sensor_params):
-  str = f'struct {sensor_name}_state : public aggregation_state {{\n'
+def snippet_sensor_state(sensor_name, sensor_params):
+  str = f'struct {sensor_name}_state '
+  if sensor_name != "sensor":
+    str += f': public sensor_state '
+  str += f'{{\n'
   for field_name, field_params in sensor_params.items():
     if field_params["aggregate"] in ["mean"]:
       str += indent(f'unsigned {field_name}_count{{0u}};\n')
@@ -105,6 +125,12 @@ def snippet_aggregation_step(sensor_name, sensor_params):
   str += indent(f'{sensor_name} const aggregate,\n', 2)
   str += indent(f'{sensor_name}_state const state,\n', 2)
   str += indent(f'{sensor_name} const sample) {{\n', 2)
+  if sensor_name != "sensor":
+    str += indent(textwrap.dedent(f'''\
+      auto const [base_aggregate, base_state]{{
+        aggregation_step(static_cast<sensor>(aggregate),
+                         static_cast<sensor_state>(state),
+                         static_cast<sensor>(sample))}};\n'''))
   for field_name, field_params in sensor_params.items():
     str += indent(f'auto const {field_name}{{optional_apply('
       f'aggregation_step_{field_params["aggregate"]},\n')
@@ -116,11 +142,13 @@ def snippet_aggregation_step(sensor_name, sensor_params):
 
   str += indent(
     f'\nreturn std::pair<{sensor_name}, {sensor_name}_state>{{{{\n')
-  str += indent(f'{{}},\n', 3)
+  if sensor_name != "sensor":
+    str += indent(f'base_aggregate,\n', 3)
   for field_name, field_params in sensor_params.items():
     str += indent(f'{field_name},\n', 3)
   str += indent(f'}}, {{\n', 2)
-  str += indent(f'{{}},\n', 3)
+  if sensor_name != "sensor":
+    str += indent(f'base_state,\n', 3)
   for field_name, field_params in sensor_params.items():
     if field_params["aggregate"] in ["mean"]:
       str += indent(f'{field_name}_count,\n', 3)
@@ -132,6 +160,11 @@ def snippet_aggregation_finish(sensor_name, sensor_params):
   str = f'auto aggregation_finish(\n'
   str += indent(f'{sensor_name} const aggregate,\n', 2)
   str += indent(f'{sensor_name}_state const state) {{\n', 2)
+  if sensor_name != "sensor":
+    str += indent(textwrap.dedent(f'''\
+      auto const base_aggregate{{
+        aggregation_finish(static_cast<sensor>(aggregate),
+                           static_cast<sensor_state>(state))}};\n'''))
   for field_name, field_params in sensor_params.items():
     if field_params["aggregate"] in ["mean"]:
       str += indent(
@@ -144,22 +177,24 @@ def snippet_aggregation_finish(sensor_name, sensor_params):
 
   str += indent(
     f'\nreturn {sensor_name}{{\n')
-  str += indent(f'{{}},\n', 2)
+  if sensor_name != "sensor":
+    str += indent(f'base_aggregate,\n', 2)
   for field_name, field_params in sensor_params.items():
     str += indent(f'{field_name},\n', 2)
   str += indent(f'}};\n')
   return str + f'}}\n'
 
 def snippet_name(sensor_name, sensor_params):
-  str = f'std::string_view name({sensor_name} const) {{\n'
-  str += indent(f'return std::string_view{{"{sensor_name}"}};\n')
+  str = f'std::string name({sensor_name} const &) {{\n'
+  str += indent(f'return std::string{{"{sensor_name}"}};\n')
   return str + f'}}\n'
 
 def snippet_field_names(sensor_name, sensor_params):
-  str = f'std::vector<std::string_view> field_names({sensor_name} const) {{\n'
+  str = (f'std::vector<std::string> field_names({sensor_name} const &) '
+    f'{{\n')
   str += indent(f'return std::vector{{')
   for field_name, field_params in sensor_params.items():
-    str += indent(f'\nstd::string_view{{"{field_name}"}},', 2)
+    str += indent(f'\nstd::string{{"{field_name}"}},', 2)
   str += indent(f'\n}};\n')
   return str + f'}}\n'
 
@@ -185,17 +220,21 @@ def snippet_field_names(sensor_name, sensor_params):
 
 def snippet_write_csv_fields(sensor_name, sensor_params):
   str = f'std::ostream &write_csv_fields(\n'
-  str += indent(f'std::ostream &out, {sensor_name} const data) {{\n', 2)
+  str += indent(f'std::ostream &out, {sensor_name} const &data, '
+      f'bool const inner = false) {{\n', 2)
   str += indent(f'auto const original_precision{{out.precision()}};\n')
   str += indent(f'auto const original_width{{out.width()}};\n')
   str += indent(f'auto const original_flags{{out.flags()}};\n')
-  str += indent(f'out')
+  str += indent(f'auto const original_fill{{out.fill()}};\n')
+  if sensor_name != "sensor":
+    str += indent(f'write_csv_fields(out, static_cast<sensor>(data), true);\n')
+  str += indent(f'out << std::setfill(\' \')')
   is_first_entry = True
   for field_name, field_params in sensor_params.items():
     if is_first_entry:
       is_first_entry = False
     else:
-      str += indent(f'\n<< cc::csv_delimiter_string', 2)
+      str += indent(f'\n<< std::setw(0) << cc::csv_delimiter_string', 2)
     if "decimals" in field_params:
       str += indent(f'\n<< std::setprecision({field_params["decimals"]}) '
         f'<< std::fixed', 2)
@@ -205,30 +244,61 @@ def snippet_write_csv_fields(sensor_name, sensor_params):
     if "width" in field_params:
       width = field_params["width"]
       if "decimals" in field_params:
-        width += 1 + field_params["decimals"]
+        width = f'1 + {field_params["decimals"]} + {width}'
       str += indent(f'\n<< std::setw({width})', 2)
     str += indent(f'\n<< CSVWrapper{{data.{field_name}}}', 2)
   str += f';\n'
-  str += indent(f'out.precision(original_precision);\n')
-  str += indent(f'out.width(original_width);\n')
-  str += indent(f'out.flags(original_flags);\n')
-  str += indent(f'return out << std::endl;\n')
+  str += indent(f'if (inner) return out << std::setw(0) '
+    f'<< cc::csv_delimiter_string; else {{;\n')
+  str += indent(f'out.precision(original_precision);\n', 2)
+  str += indent(f'out.width(original_width);\n', 2)
+  str += indent(f'out.flags(original_flags);\n', 2)
+  str += indent(f'out.fill(original_fill);\n', 2)
+  str += indent(f'return out << std::endl;\n', 2)
+  str += indent(f'}};\n')
   return str + f'}}\n'
 
 def snippet_write_csv_field_names():
-  return textwrap.dedent('''\
-    template<class T>
-    std::ostream &write_csv_field_names(std::ostream &out, T const &data) {
-      auto const &sensor_name{name(data)};
-      bool is_first_entry = true;
-      for (auto const &field_name : field_names(data)) {
-        if (is_first_entry) is_first_entry = false;
-        else out << cc::csv_delimiter_string;
-        out << "\\"" << sensor_name << "_" << field_name << "\\"";
-      }
-      return out << std::endl;
-    }
-    ''')
+  def snippet(template, t, base_call):
+    return textwrap.dedent(f'''{template}''' f'''\
+      std::ostream &write_csv_field_names(std::ostream &out, {t} const &data,
+          std::optional<std::string> const sensor_name_arg = {{}},
+          bool const inner = false) {{
+        auto const original_precision{{out.precision()}};
+        auto const original_width{{out.width()}};
+        auto const original_flags{{out.flags()}};
+        auto const original_fill{{out.fill()}};
+        out << std::setw(0);
+        std::string sensor_name{{sensor_name_arg.value_or(name(data))}};
+        ''' f'''{base_call}
+        auto const field_names_buffer{{field_names(data)}};
+        for (auto const &field_name : field_names_buffer) {{
+          out << "\\"" << sensor_name << "_" << field_name << "\\"";
+          if (inner or &field_name != &field_names_buffer.back())
+            out << cc::csv_delimiter_string;
+        }}
+        if (inner) return out; else {{
+          out.precision(original_precision);
+          out.width(original_width);
+          out.flags(original_flags);
+          out.fill(original_fill);
+          return out << std::endl;
+        }}
+      }}''')
+
+  template = f''
+  t = f'sensor'
+  base_call = f''
+  str = snippet(template, t, base_call) + f'\n\n'
+
+  template = indent(f'template<class T>\n', 3)
+  t = f'T'
+  base_call = indent(textwrap.dedent(f'''
+    write_csv_field_names(out, static_cast<sensor>(data),
+      std::optional<std::string>(sensor_name), true);
+    '''), 4)
+  str += snippet(template, t, base_call)
+  return str
 
 def sensors_include(sensors):
   str = f''
@@ -238,32 +308,32 @@ def sensors_include(sensors):
     os.path.join(os.path.dirname(__file__), "..", "src"))
   str += f'// File generated by `{rel_file_path}`\n' + sep
 
-  includes = ["vector", "string_view", "utility", "optional", "tuple",
-    "ostream", "iomanip", "ios", "algorithm"]
+  includes = ["vector", "string", "algorithm",
+    "utility", "optional", "tuple", "ostream", "iomanip", "ios"]
 
   for include in includes:
     str += f'#include <{include}>\n'
     pass
   str += sep
 
-  str += f'namespace cc {{\n' + sep
-  str += indent(f'int constexpr field_decimals_default{{6u}};\n' + sep)
-  # str += indent(f'std::string_view constexpr csv_delimiter_string{{", "}};\n')
-  # str += indent(f'std::string_view constexpr csv_false_string{{"0"}};\n')
-  # str += indent(f'std::string_view constexpr csv_true_string{{"1"}};\n' + sep)
-  str += f'}} // namespace cc\n' + sep
-
   str += f'namespace sensors {{\n' + sep
-  str += indent(f'struct sensor {{}};\n' + sep)
-  str += indent(f'struct aggregation_state {{}};\n' + sep)
   str += indent(snippet_bool_as_csv_string() + sep)
+  # str += indent(snippet_struct_sensor() + sep)
+  # str += indent(snippet_struct_sensor_state() + sep)
   # str += indent(snippet_optional_apply() + sep)
   str += indent(snippet_aggregation_step_ops() + sep)
   # str += indent(snippet_write_field() + sep)
 
-  for snippet in [snippet_struct, snippet_aggregation_state,
+  base_sensor_params = {"timestamp": {
+    "type": "cc::timestamp_duration_t",
+    "aggregate": "mean",
+    "width": "cc::timestamp_width",
+    "decimals": "cc::timestamp_decimals"}}
+
+  for snippet in [snippet_struct, snippet_sensor_state,
       snippet_aggregation_step, snippet_aggregation_finish, snippet_name,
       snippet_field_names, snippet_write_csv_fields]:
+    str += indent(snippet("sensor", base_sensor_params) + sep)
     for sensor_name, sensor_params in sensors.items():
       str += indent(snippet(sensor_name, sensor_params) + sep)
 
