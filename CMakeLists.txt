@@ -15,8 +15,11 @@ string(APPEND CMAKE_CXX_FLAGS_DEBUG " -O0 -ggdb3") # For `gcc`
 
 # Compiler output
 add_compile_options(-W -Wall -Wextra)
-string(APPEND CMAKE_CXX_FLAGS " -fdiagnostics-color=always") # For `gcc`
-#string(APPEND CMAKE_CXX_FLAGS " -fcolor-diagnostics") # For `clang`
+if (${CMAKE_GENERATOR} MATCHES "Ninja")
+  # For "Ninja" or "Ninja Multi-Config", colorized output has to be forced
+  string(APPEND CMAKE_CXX_FLAGS " -fdiagnostics-color=always") # For `gcc`
+  #string(APPEND CMAKE_CXX_FLAGS " -fcolor-diagnostics") # For `clang`
+endif()
 
 # When using this with `target_link_libraries(<target> Threads::Threads)`, it
 # should roughly be the CMake way of doing `gcc -pthread`, as is needed for
@@ -26,6 +29,7 @@ set(THREADS_PREFER_PTHREAD_FLAG TRUE)
 
 project(sensor-logging)
 add_subdirectory(include/DHTXXD)
+add_subdirectory(include/_433D)
 add_executable(sensor-logging src/main.cpp)
 
 # Link to POSIX Threads
@@ -38,6 +42,8 @@ target_link_libraries(sensor-logging pigpiod_if2)
 # Make header files under `include/` available and link to the libraries
 target_include_directories(sensor-logging PUBLIC include/DHTXXD)
 target_link_libraries(sensor-logging DHTXXD)
+target_include_directories(sensor-logging PUBLIC include/_433D)
+target_link_libraries(sensor-logging _433D)
 
 # Run code generation scripts whenever they or their inputs have changed
 
