@@ -5,24 +5,18 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 # https://gitlab.kitware.com/cmake/community/-/wikis/FAQ
 
 # NOTE: CMake is a mess as always. Some of the following properties have to be
-# set before declaring a project, but some apparantly not. I'm not sure which
-# and why.
+# set before declaring a project, but some apparantly not, and then there are
+# others that must be set afterwards, and all of this is not very transparent.
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED TRUE)
-set(CMAKE_DEFAULT_BUILD_TYPE Release)
-set(CMAKE_BUILD_TYPE ${CMAKE_DEFAULT_BUILD_TYPE})
 set(CMAKE_INTERPROCEDURAL_OPTIMIZATION_RELEASE ON)
-string(APPEND CMAKE_CXX_FLAGS_RELEASE " -O3")
-string(APPEND CMAKE_CXX_FLAGS_DEBUG " -O0 -ggdb3") # For `gcc`
-#string(APPEND CMAKE_CXX_FLAGS_DEBUG " -O0 -glldb") # For `clang`
 
-# Compiler output
-add_compile_options(-W -Wall -Wextra)
-if (${CMAKE_GENERATOR} MATCHES "Ninja")
-  # For "Ninja" or "Ninja Multi-Config", colorized output has to be forced
-  string(APPEND CMAKE_CXX_FLAGS " -fdiagnostics-color=always") # For `gcc`
-  #string(APPEND CMAKE_CXX_FLAGS " -fcolor-diagnostics") # For `clang`
+if(NOT CMAKE_BUILD_TYPE)
+  set(CMAKE_BUILD_TYPE Release)
+endif()
+if (${CMAKE_GENERATOR} STREQUAL "Ninja Multi-Config")
+  set(CMAKE_DEFAULT_BUILD_TYPE ${CMAKE_BUILD_TYPE})
 endif()
 
 # When using this with `target_link_libraries(<target> Threads::Threads)`, it
@@ -32,6 +26,30 @@ set(CMAKE_THREAD_PREFER_PTHREAD TRUE)
 set(THREADS_PREFER_PTHREAD_FLAG TRUE)
 
 project(sensor-logging)
+
+# NOTE: At least for the "Release" build type, it seems that appending an extra
+# `-O3` to the flags somehow removes the automatic addition of `-DNDEBUG`. I
+# reckon that I may just want to let the toolchain decide the release build
+# optimization level by itself and leave the flags alone. It seems to result in
+# `-O3` anyway. For the "Debug" build type, I want to use `-ggdb3`/`-glldb`,
+# though, and there's no `-DNDEBUG` to override then anyway.
+if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+  string(APPEND CMAKE_CXX_FLAGS_DEBUG " -O0" " -ggdb3")
+elseif (CMAKE_CXX_COMPILER_ID MATCHES "Clang") # "Clang" or "AppleClang"
+  string(APPEND CMAKE_CXX_FLAGS_DEBUG " -O0" " -glldb")
+endif()
+
+add_compile_options(-W -Wall -Wextra)
+
+# For "Ninja" or "Ninja Multi-Config", colorized output has to be forced
+if (${CMAKE_GENERATOR} MATCHES "Ninja")
+  if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+    string(APPEND CMAKE_CXX_FLAGS " -fdiagnostics-color=always")
+  elseif (CMAKE_CXX_COMPILER_ID MATCHES "Clang") # "Clang" or "AppleClang"
+    string(APPEND CMAKE_CXX_FLAGS " -fcolor-diagnostics")
+  endif()
+endif()
+
 add_subdirectory(include/DHTXXD)
 add_subdirectory(include/_433D)
 add_executable(sensor-logging src/main.cpp)
@@ -50,24 +68,22 @@ target_include_directories(sensor-logging PUBLIC include/_433D)
 target_link_libraries(sensor-logging _433D)
 
 # Run code generation scripts whenever they or their inputs have changed
-
 add_custom_command(
   OUTPUT ${PROJECT_SOURCE_DIR}/src/machine.cpp
   WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}
   COMMAND python3 script/write-machine-include.py
   DEPENDS script/write-machine-include.py
   COMMENT "Running `write-machine-include.py`…")
-add_custom_target(write-machine-include ALL
-  DEPENDS ${PROJECT_SOURCE_DIR}/src/machine.cpp)
-add_dependencies(sensor-logging write-machine-include)
-
 add_custom_command(
   OUTPUT ${PROJECT_SOURCE_DIR}/src/sensors.cpp
   WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}
   COMMAND python3 script/write-sensors-include.py
   DEPENDS script/sensors.json script/write-sensors-include.py
   COMMENT "Running `write-sensors-include.py`…")
+add_custom_target(write-machine-include ALL
+  DEPENDS ${PROJECT_SOURCE_DIR}/src/machine.cpp)
 add_custom_target(write-sensors-include ALL
   DEPENDS ${PROJECT_SOURCE_DIR}/src/sensors.cpp)
+add_dependencies(sensor-logging write-machine-include)
 add_dependencies(sensor-logging write-sensors-include)
 

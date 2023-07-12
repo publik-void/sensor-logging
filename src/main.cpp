@@ -4,7 +4,6 @@
 #include <optional>
 #include <tuple>
 #include <array>
-#include <string_view>
 #include <cstdint>
 #include <cinttypes>
 #include <csignal>
@@ -33,8 +32,15 @@ extern "C" {
 #include "machine.cpp"
 
 namespace cc { // compile-time constants
+  #ifdef NDEBUG
+    bool constexpr ndebug{true};
+  #else
+    bool constexpr ndebug{false};
+  #endif
 
-  bool constexpr log_errors{true};
+  bool constexpr log_errors{!ndebug};
+  char constexpr const * const log_info_string{"INFO"};
+  char constexpr const * const log_error_string{"ERROR"};
 
   std::chrono::milliseconds constexpr sampling_interval{300};
   unsigned constexpr samples_per_aggregate{5u};
@@ -46,14 +52,17 @@ namespace cc { // compile-time constants
 
   int constexpr field_decimals_default{6};
 
-  std::string_view constexpr csv_delimiter_string{", "};
-  std::string_view constexpr csv_false_string{"0"};
-  std::string_view constexpr csv_true_string{"1"};
+  char constexpr const * const csv_delimiter_string{", "};
+  char constexpr const * const csv_false_string{"0"};
+  char constexpr const * const csv_true_string{"1"};
 
   int constexpr exit_code_success{0};
   int constexpr exit_code_error{1};
   int constexpr exit_code_interrupt{130};
 }
+
+std::string log_info_prefix;
+std::string log_error_prefix;
 
 template<typename T>
 struct CSVWrapper {
@@ -126,7 +135,8 @@ struct Pi {
       handle{pigpio_start(addr, port)} {
     if constexpr (cc::log_errors) if (this->handle < 0) {
         char const *port_env{std::getenv("PIGPIO_PORT")};
-        std::cerr << "Error connecting to pigpio daemon at "
+        std::cerr << log_error_prefix
+          << "connecting to pigpio daemon at "
           << "address " << (addr ? addr : "localhost")
           << ", port " << (port ? port : (port_env ? port_env : "8888"))
           << ": " << pigpio_error(this->handle) << std::endl;
@@ -152,8 +162,8 @@ struct I2C {
       handle{i2c_open(pi_handle, bus, addr, flags)}, pi_handle{pi_handle} {
     if constexpr (cc::log_errors) if (this->handle < 0) {
       auto const original_flags{std::cerr.flags()};
-      std::cerr
-        << "Error opening I2C device on "
+      std::cerr << log_error_prefix
+        << "opening I2C device on "
         << "Pi " << pi_handle
         << std::hex << std::showbase
         << ", bus " << bus
@@ -169,7 +179,7 @@ struct I2C {
     if (this->handle >= 0) {
       int const response{i2c_close(this->pi_handle, this->handle)};
       if constexpr (cc::log_errors) if (response < 0) std::cerr
-        << "Error closing I2C device on "
+        << log_error_prefix << "closing I2C device on "
         << "Pi " << pi_handle
         << ": " << pigpio_error(response) << std::endl;
     }
@@ -189,8 +199,8 @@ struct Serial {
       handle{serial_open(pi_handle, tty, baud_rate, flags)},
       pi_handle{pi_handle} {
     if constexpr (cc::log_errors) if (this->handle < 0) {
-      std::cerr
-        << "Error opening serial device on "
+      std::cerr << log_error_prefix
+        << "opening serial device on "
         << "Pi " << pi_handle
         << ", file " << tty
         << ", baud rate " << baud_rate
@@ -204,7 +214,7 @@ struct Serial {
     if (this->handle >= 0) {
       int const response{serial_close(this->pi_handle, this->handle)};
       if constexpr (cc::log_errors) if (response < 0) std::cerr
-        << "Error closing serial device on "
+        << log_error_prefix << "closing serial device on "
         << "Pi " << pi_handle
         << ": " << pigpio_error(response) << std::endl;
     }
@@ -243,7 +253,7 @@ struct LDP433Receiver {
   }
 
   ~LDP433Receiver() {
-    _433D_rx_cancel(this->dht);
+    _433D_rx_cancel(this->ldp433_receiver);
     //std::cout << "LDP433Receiver destructed" << std::endl;
   }
 };
@@ -260,7 +270,7 @@ struct LDP433Transmitter {
   }
 
   ~LDP433Transmitter() {
-    _433D_tx_cancel(this->dht);
+    _433D_tx_cancel(this->ldp433_transmitter);
     //std::cout << "LDP433Transmitter destructed" << std::endl;
   }
 };
@@ -272,7 +282,8 @@ auto create_i2c_reader(int const pi_handle, int const i2c_handle) {
   return [=](unsigned const reg){
     int const response{i2c_read_byte_data(pi_handle, i2c_handle, reg)};
     if (response < 0) {
-      if constexpr (cc::log_errors) std::cerr << "Error reading from "
+      if constexpr (cc::log_errors) std::cerr << log_error_prefix
+        << "reading from "
         << "Pi " << pi_handle
         << ", I2C " << i2c_handle
         << ", register " << reg
@@ -340,7 +351,7 @@ int mhz19_send(Serial const &serial, T const packet) {
     packet[4], packet[5], packet[6], packet[7], mhz19_checksum(packet)}};
   int const response{serial_write(serial.pi_handle, serial, buf.data(), 9u)};
   if constexpr (cc::log_errors) if (response < 0) std::cerr
-    << "Error sending packet to MH-Z19 on "
+    << log_error_prefix << "sending packet to MH-Z19 on "
     << "Pi " << serial.pi_handle
     << ", serial " << serial.handle
     << ": " << pigpio_error(response) << std::endl;
@@ -357,8 +368,8 @@ std::optional<std::array<std::uint8_t, 8>> mhz19_receive(
     serial_wait_read(serial, buf.data(), 9u, timeout, interval)};
   if (response < 9) {
     if constexpr (cc::log_errors) {
-      std::cerr
-        << "Error receiving packet from MH-Z19 on "
+      std::cerr << log_error_prefix
+        << "receiving packet from MH-Z19 on "
         << "Pi " << serial.pi_handle
         << ", serial " << serial.handle
         << ": ";
@@ -608,10 +619,17 @@ namespace {
   void graceful_exit(int const = 0) { quit_early = true; cv.notify_all(); }
 }
 
-//int main(int argc, char *argv[]) {
-int main() {
+int main(int const, char const * const argv[]) {
   std::signal(SIGINT , graceful_exit);
   std::signal(SIGTERM, graceful_exit);
+
+  log_info_prefix =
+    std::string(argv[0]) + ": " + cc::log_info_string + ": ";
+  log_error_prefix =
+    std::string(argv[0]) + ": " + cc::log_error_string + ": ";
+  if constexpr (cc::log_errors) std::cerr << log_info_prefix
+    << "Error logging to stderr enabled."
+      " This probably means that this is not a release build." << std::endl;
 
   Pi const pi{};
   if (errored(pi)) return cc::exit_code_error;
