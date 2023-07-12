@@ -27,6 +27,7 @@
 extern "C" {
   #include <pigpiod_if2.h>
   #include "DHTXXD.h"
+  #include "_433D.h"
 }
 
 #include "machine.cpp"
@@ -226,6 +227,41 @@ struct DHT {
   ~DHT() {
     DHTXXD_cancel(this->dht);
     //std::cout << "DHT destructed" << std::endl;
+  }
+};
+
+struct LDP433Receiver {
+  _433D_rx_t * const ldp433_receiver;
+  operator _433D_rx_t * () const { return this->ldp433_receiver; }
+
+  LDP433Receiver(LDP433Receiver const &) = delete;
+
+  LDP433Receiver(int const pi_handle, int const gpio_index,
+      _433D_rx_CB_t callback = nullptr) :
+      ldp433_receiver{_433D_rx(pi_handle, gpio_index, callback)} {
+    //std::cout << "LDP433Receiver constructed" << std::endl;
+  }
+
+  ~LDP433Receiver() {
+    _433D_rx_cancel(this->dht);
+    //std::cout << "LDP433Receiver destructed" << std::endl;
+  }
+};
+
+struct LDP433Transmitter {
+  _433D_tx_t * const ldp433_transmitter;
+  operator _433D_tx_t * () const { return this->ldp433_transmitter; }
+
+  LDP433Transmitter(LDP433Transmitter const &) = delete;
+
+  LDP433Transmitter(int const pi_handle, int const gpio_index) :
+      ldp433_transmitter{_433D_tx(pi_handle, gpio_index)} {
+    //std::cout << "LDP433Transmitter constructed" << std::endl;
+  }
+
+  ~LDP433Transmitter() {
+    _433D_tx_cancel(this->dht);
+    //std::cout << "LDP433Transmitter destructed" << std::endl;
   }
 };
 
