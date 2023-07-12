@@ -111,17 +111,17 @@ std::ostream& operator<<(std::ostream& out,
 template<class F, class T>
 std::optional<T> optional_apply(F f, std::optional<T> const &x0) {
   if (x0.has_value()) return std::optional<T>{f(x0.value())};
-  else return std::optional<T>{};
+  else return x0;
 }
 template<class F, class T>
 std::optional<T> optional_apply(F f,
     std::optional<T> const &x0, std::optional<T> const &x1) {
   if (x0.has_value()) {
     if (x1.has_value()) return std::optional<T>{f(x0.value(), x1.value())};
-    else return std::optional<T>{x0};
+    else return x0;
   } else {
-    if (x1.has_value()) return std::optional<T>{x1};
-    else return std::optional<T>{};
+    if (x1.has_value()) return x1;
+  else return x0;
   }
 }
 
