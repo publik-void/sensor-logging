@@ -1,13 +1,17 @@
 cmake_minimum_required(VERSION 3.18)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
+# CMake FAQ, maybe this will come in handy:
+# https://gitlab.kitware.com/cmake/community/-/wikis/FAQ
+
 # NOTE: CMake is a mess as always. Some of the following properties have to be
 # set before declaring a project, but some apparantly not. I'm not sure which
 # and why.
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED TRUE)
-set(CMAKE_BUILD_TYPE Release)
+set(CMAKE_DEFAULT_BUILD_TYPE Release)
+set(CMAKE_BUILD_TYPE ${CMAKE_DEFAULT_BUILD_TYPE})
 set(CMAKE_INTERPROCEDURAL_OPTIMIZATION_RELEASE ON)
 string(APPEND CMAKE_CXX_FLAGS_RELEASE " -O3")
 string(APPEND CMAKE_CXX_FLAGS_DEBUG " -O0 -ggdb3") # For `gcc`
