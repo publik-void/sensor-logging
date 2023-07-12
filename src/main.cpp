@@ -3,6 +3,7 @@
 #include <iomanip>
 #include <optional>
 #include <tuple>
+#include <array>
 #include <string_view>
 #include <cstdint>
 #include <cinttypes>
@@ -75,8 +76,9 @@ template<class Rep, std::intmax_t Num, std::intmax_t Denom>
 std::ostream& operator<<(std::ostream& out,
     CSVWrapper<std::chrono::duration<Rep, std::ratio<Num, Denom>>> const &x) {
   auto const original_width{out.width()};
+  auto const original_flags{out.flags()};
   auto seconds{std::imaxdiv(x.x.count() * Num, Denom)};
-  out << std::setw(cc::timestamp_width) << seconds.quot;
+  out << std::dec << std::setw(cc::timestamp_width) << seconds.quot;
   if constexpr (cc::timestamp_decimals > 0) {
     auto const original_fill{out.fill()};
     auto constexpr timestamp_den{static_cast<std::intmax_t>(
@@ -88,6 +90,7 @@ std::ostream& operator<<(std::ostream& out,
     out.fill(original_fill);
   }
   out.width(original_width);
+  out.flags(original_flags);
   return out;
 }
 
@@ -120,14 +123,12 @@ struct Pi {
 
   Pi(char const *addr = nullptr, char const *port = nullptr) :
       handle{pigpio_start(addr, port)} {
-    if (this->handle < 0) {
-      if constexpr (cc::log_errors) {
+    if constexpr (cc::log_errors) if (this->handle < 0) {
         char const *port_env{std::getenv("PIGPIO_PORT")};
         std::cerr << "Error connecting to pigpio daemon at "
           << "address " << (addr ? addr : "localhost")
           << ", port " << (port ? port : (port_env ? port_env : "8888"))
           << ": " << pigpio_error(this->handle) << std::endl;
-      }
     }
     //std::cout << "Pi constructed" << std::endl;
   }
@@ -141,14 +142,14 @@ struct Pi {
 struct I2C {
   int const handle;
   int const pi_handle;
-  operator int() const { return this->handle; }
+  operator unsigned() const { return static_cast<unsigned>(this->handle); }
 
   I2C(I2C const &) = delete;
 
   I2C(int const pi_handle, unsigned const bus,
       unsigned const addr, unsigned const flags = 0u) : 
       handle{i2c_open(pi_handle, bus, addr, flags)}, pi_handle{pi_handle} {
-    if (this->handle < 0) if constexpr (cc::log_errors) {
+    if constexpr (cc::log_errors) if (this->handle < 0) {
       auto const original_flags{std::cerr.flags()};
       std::cerr
         << "Error opening I2C device on "
@@ -166,12 +167,47 @@ struct I2C {
   ~I2C() {
     if (this->handle >= 0) {
       int const response{i2c_close(this->pi_handle, this->handle)};
-      if (response < 0) if constexpr (cc::log_errors) std::cerr
+      if constexpr (cc::log_errors) if (response < 0) std::cerr
         << "Error closing I2C device on "
         << "Pi " << pi_handle
         << ": " << pigpio_error(response) << std::endl;
     }
     //std::cout << "I2C destructed" << std::endl;
+  }
+};
+
+struct Serial {
+  int const handle;
+  int const pi_handle;
+  operator unsigned() const { return static_cast<unsigned>(this->handle); }
+
+  Serial(Serial const &) = delete;
+
+  Serial(int const pi_handle, char * const tty, unsigned const baud_rate,
+      unsigned const flags = 0u) : 
+      handle{serial_open(pi_handle, tty, baud_rate, flags)},
+      pi_handle{pi_handle} {
+    if constexpr (cc::log_errors) if (this->handle < 0) {
+      std::cerr
+        << "Error opening serial device on "
+        << "Pi " << pi_handle
+        << ", file " << tty
+        << ", baud rate " << baud_rate
+        << ", flags " << flags
+        << ": " << pigpio_error(this->handle) << std::endl;
+    }
+    //std::cout << "Serial constructed" << std::endl;
+  }
+
+  ~Serial() {
+    if (this->handle >= 0) {
+      int const response{serial_close(this->pi_handle, this->handle)};
+      if constexpr (cc::log_errors) if (response < 0) std::cerr
+        << "Error closing serial device on "
+        << "Pi " << pi_handle
+        << ": " << pigpio_error(response) << std::endl;
+    }
+    //std::cout << "Serial destructed" << std::endl;
   }
 };
 
@@ -224,11 +260,104 @@ std::optional<bool> get_flag(
     : std::optional<bool>{};
 };
 
+// Empties all bytes buffered for reading from the given serial port
+int serial_flush(Serial const &serial) {
+  int const response{serial_data_available(serial.pi_handle, serial)};
+  if (response < 0) return response; // TODO: Error reporting to stderr
+  for (int i{0}; i < response; ++i) {
+    int const response{serial_read_byte(serial.pi_handle, serial)};
+    if (response < 0) return response; // TODO: Error reporting to stderr
+  }
+  return response;
+}
+
+// Checks periodically until requested byte count is available and then reads
+template<class Rep0, class Period0, class Rep1, class Period1>
+int serial_wait_read(Serial const &serial, char * const buf,
+    unsigned const count,
+    std::chrono::duration<Rep0, Period0> const timeout =
+      std::chrono::milliseconds{100},
+    std::chrono::duration<Rep1, Period1> const interval =
+      std::chrono::milliseconds{10}) {
+  std::size_t const
+    max_intervals_to_wait{static_cast<std::size_t>(timeout / interval)};
+  for (std::size_t i{0}; i < max_intervals_to_wait; ++i) {
+    int const response{serial_data_available(serial.pi_handle, serial)};
+    if (response < 0) return response;
+    if (response >= static_cast<int>(count))
+      return serial_read(serial.pi_handle, serial, buf, count);
+    std::this_thread::sleep_for(interval);
+  }
+  return 0;
+}
+
+template<typename T>
+char mhz19_checksum(T const packet) {
+  char checksum{0x00};
+  for(std::size_t i{1}; i < 8; ++i) checksum += packet[i];
+  return (0xff - checksum) + 0x01;
+}
+
+template<typename T>
+int mhz19_send(Serial const &serial, T const packet) {
+  std::array<char, 9> buf{{packet[0], packet[1], packet[2], packet[3],
+    packet[4], packet[5], packet[6], packet[7], mhz19_checksum(packet)}};
+  int const response{serial_write(serial.pi_handle, serial, buf.data(), 9u)};
+  if constexpr (cc::log_errors) if (response < 0) std::cerr
+    << "Error sending packet to MH-Z19 on "
+    << "Pi " << serial.pi_handle
+    << ", serial " << serial.handle
+    << ": " << pigpio_error(response) << std::endl;
+  return response;
+}
+
+std::optional<std::array<std::uint8_t, 8>> mhz19_receive(
+    Serial const &serial) {
+  std::chrono::milliseconds constexpr timeout{100};
+  std::chrono::milliseconds constexpr interval{10};
+
+  std::array<char, 9> buf{};
+  int const response{
+    serial_wait_read(serial, buf.data(), 9u, timeout, interval)};
+  if (response < 9) {
+    if constexpr (cc::log_errors) {
+      std::cerr
+        << "Error receiving packet from MH-Z19 on "
+        << "Pi " << serial.pi_handle
+        << ", serial " << serial.handle
+        << ": ";
+      if (response < 0) std::cerr << pigpio_error(response);
+      else std::cerr << "expected to read 9 bytes, got " << response;
+      std::cerr << std::endl;
+    }
+    return {};
+  }
+
+  // If the checksum doesn't match, don't output an error
+  if (buf[8] != mhz19_checksum(buf)) return {};
+
+  std::array<std::uint8_t, 8> packet{{buf[0], buf[1], buf[2], buf[3], buf[4],
+    buf[5], buf[6], buf[7]}};
+  return {packet};
+}
+
 #include "sensors.cpp"
 
 namespace sensors {
   // Sampling functions, written here manually, because machine-generating them
   // would involve a lot of complexity for little gain at my scale of operation.
+
+  // One design choice to be made here is how to handle the aggregation of time
+  // values if the dependent variables are missing. For a sensor like the DHT22,
+  // which has two dependent variables total which always fail together, it
+  // would make sense to not include the time points of failed readings, as
+  // taking the mean of the time points that are left would provide a better
+  // precision for the actual time of the aggregated reading. Meanwhile, for
+  // something like the SensorHub, where it's common to have most readings not
+  // fail and only some occasionally fail, I would have to provide an
+  // aggregated time point for each individual reading to achieve the same
+  // precision. So I think I'll make this choice for each sampling function
+  // individually, depending on whether all readings always fail in sync or not.
 
   template<typename Clock>
   sensor sample_sensor(Clock &clock) {
@@ -240,8 +369,7 @@ namespace sensors {
   }
 
   template<typename Clock>
-  sensorhub sample_sensorhub(Clock &clock,
-      int const pi_handle, int const i2c_handle) {
+  sensorhub sample_sensorhub(Clock &clock, I2C const &i2c) {
     unsigned constexpr reg_ntc_temperature   {0x01u};
     unsigned constexpr reg_brightness_0      {0x02u};
     unsigned constexpr reg_brightness_1      {0x03u};
@@ -261,7 +389,7 @@ namespace sensors {
     unsigned constexpr flag_brightness_overrange{0x04u};
     unsigned constexpr flag_brightness_error    {0x08u};
 
-    auto const read{create_i2c_reader(pi_handle, i2c_handle)};
+    auto const read{create_i2c_reader(i2c.pi_handle, i2c)};
 
     auto const status{read(reg_status)};
 
@@ -330,9 +458,7 @@ namespace sensors {
         return (x == 1) ? 1.f : 0.f;
       }, read(reg_motion))};
 
-    sensor const base_sample{sample_sensor(clock)};
-
-    return sensorhub{base_sample,
+    return sensorhub{sample_sensor(clock),
       ntc_temperature,
       ntc_overrange,
       ntc_error,
@@ -363,14 +489,76 @@ namespace sensors {
     //   amount of time.
     // I am choosing to go with the second option here. This means I need to
     // manage the frequency with which this function is called myself.
+
     DHTXXD_manual_read(dht);
     auto const data{DHTXXD_data(dht)};
 
-    sensor const base_sample{sample_sensor(clock)};
-
     return (data.status == DHT_GOOD)
-      ? dht22{base_sample, {data.temperature}, {data.humidity}}
-      : dht22{base_sample, {}, {}};
+      ? dht22{sample_sensor(clock), {data.temperature}, {data.humidity}}
+      : dht22{};
+  }
+
+  template<typename Clock>
+  mhz19 sample_mhz19(Clock &clock, Serial const &serial) {
+    // Resources on this sensor (MH-Z19, MH-Z19B, MH-Z19C):
+    // https://revspace.nl/MHZ19
+    // https://habr.com/ru/articles/401363/
+    //
+    // Regarding the calibration of this sensor: As the documentation is so
+    // spread out among bad data sheets and experiments recorded in blog posts
+    // and comments, for several different models, it's kinda hard to get a
+    // solid idea of how I best do this.
+    // First of all, it seems that the sensor does an automatic calibration
+    // every 24h, which relies on an internal value that tracks something like
+    // the minimum CO2 concentration and can be found in the 6th and maybe 7th
+    // byte of the response to the standard read command (0x86).
+    // There is a "zero point" and a "span" which can be calibrated. Calibration
+    // can be triggered manually and the automatic calibration (also in some
+    // places referred to as ABC, automatic baseline correction) can be turned
+    // off.
+    // There are critiques of the automatic calibration, which may lead to hard
+    // jumps in the readings, but it seems this is especially the case in the
+    // first couple days of operation and perhaps even more so if the sensor is
+    // operated at 3.3V instead of 5V. Otherwise, maybe it's not that bad,
+    // especially if the sensor is regularly exposed to 400ppm.
+    // I don't fully understand the manual calibration, especially in regards to
+    // what conditions need to be present when performing it. It looks like
+    // there is a possibility of ruining the readings more or less forever if
+    // doing this wrong.
+    // So I guess I'll go with the "ABC" for now, as my sensors should be
+    // exposed to atmospheric conditions at least semi-regularly. And then I'll
+    // record the special value "U" in case it helps with correcting some issues
+    // during data analysis.
+    //
+    // The detection range can be set to 1000, 2000, 3000, and 5000ppm. I reckon
+    // a higher range comes with lower accuracy? As I don't know whether setting
+    // this triggers any other kind of resets, I should probably do it
+    // infrequently.
+
+    char constexpr byte_start{0xff};
+    char constexpr byte_sensor_number{0x01};
+
+    std::array<char, 8> constexpr cmd_read{{byte_start, byte_sensor_number,
+      0x86, 0x00, 0x00, 0x00, 0x00, 0x00}};
+
+    serial_flush(serial);
+    int const response{mhz19_send(serial, cmd_read)};
+    if (response >= 0) {
+      auto const maybe_packet{mhz19_receive(serial)};
+      if (maybe_packet.has_value()) {
+        auto const packet{maybe_packet.value()};
+        float const co2_concentration{static_cast<float>(
+          static_cast<std::uint32_t>(packet[2]) << 8u |
+          static_cast<std::uint32_t>(packet[3]) << 0u)};
+        float const temperature{packet[4] - 40.f};
+        int const status{packet[5]};
+        int const u0{packet[6]}, u1{packet[7]};
+        return mhz19{sample_sensor(clock), {co2_concentration}, {temperature},
+          status == 0 ? std::optional<int>{} : std::optional<int>{status},
+          {u0}, {u1}};
+      }
+    }
+    return mhz19{};
   }
 }
 
@@ -397,12 +585,16 @@ int main() {
 
   DHT const dht{pi, 4, DHTXX};
 
+  Serial const serial{pi, const_cast<char *>("/dev/serial0"), 9600u};
+  if (errored(serial)) return cc::exit_code_error;
+
   std::chrono::high_resolution_clock const clock{};
 
   auto const time_reference{clock.now()};
 
   sensors::write_csv_field_names(std::cout, sensors::sensorhub{});
   sensors::write_csv_field_names(std::cout, sensors::dht22{});
+  sensors::write_csv_field_names(std::cout, sensors::mhz19{});
 
   for (unsigned aggregate_index{0u};
       aggregate_index < cc::aggregates_per_run;
@@ -413,6 +605,9 @@ int main() {
 
     sensors::dht22 a1{};
     sensors::dht22_state s1{};
+
+    sensors::mhz19 a2{};
+    sensors::mhz19_state s2{};
 
     for (unsigned sample_index{0u};
         sample_index < cc::samples_per_aggregate;
@@ -425,11 +620,14 @@ int main() {
       //  << ", sample index " << sample_index
       //  << std::endl;
 
-      auto const x0{sensors::sample_sensorhub(clock, pi, i2c)};
+      auto const x0{sensors::sample_sensorhub(clock, i2c)};
       std::tie(a0, s0) = aggregation_step(a0, s0, x0);
 
       auto const x1{sensors::sample_dht22(clock, dht)};
       std::tie(a1, s1) = aggregation_step(a1, s1, x1);
+
+      auto const x2{sensors::sample_mhz19(clock, serial)};
+      std::tie(a2, s2) = aggregation_step(a2, s2, x2);
 
       if ((sample_index + 1u) == cc::samples_per_aggregate) {
         a0 = aggregation_finish(a0, s0);
@@ -437,6 +635,9 @@ int main() {
 
         a1 = aggregation_finish(a1, s1);
         sensors::write_csv_fields(std::cout, a1);
+
+        a2 = aggregation_finish(a2, s2);
+        sensors::write_csv_fields(std::cout, a2);
       }
 
       auto const next_time_point{time_reference + cc::sampling_interval *

@@ -80,5 +80,34 @@
       "width" : 3,
       "decimals" : 1
     }
+  },
+  "mhz19" : {
+    "co2_concentration" : {
+      "type" : "float",
+      "aggregate" : "mean",
+      "width" : 4,
+      "decimals" : 1
+    },
+    "temperature" : {
+      "type" : "float",
+      "aggregate" : "mean",
+      "width" : 3,
+      "decimals" : 1
+    },
+    "status" : {
+      "type": "int",
+      "aggregate" : "first",
+      "width" : 3
+    },
+    "u0" : {
+      "type": "int",
+      "aggregate" : "first",
+      "width" : 3
+    },
+    "u1" : {
+      "type": "int",
+      "aggregate" : "first",
+      "width" : 3
+    }
   }
 }
