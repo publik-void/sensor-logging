@@ -1,0 +1,50 @@
+REQUIRES
+
+A radio transmitter and/or radio receiver connected to the Pi GPIO.
+
+313MHz and 434MHz are commonly used frequencies for key fobs.
+
+This software assumes the codes to be received and transmitted use
+Manchester encoding.
+
+TO BUILD
+
+gcc -Wall -pthread -o _433D test_433D.c _433D.c -lpigpiod_if2
+
+TO RUN
+
+sudo pigpiod # If the daemon is not already running
+
+then
+
+./_433D -r10 # Print fob keycodes received on GPIO 10.
+
+or
+
+./_433D -t5 8246184 # Transmit code on GPIO 5.
+
+or
+
+./_433D -r10 -t5 8246184 # Transmit code on GPIO 5 then listen for codes
+
+or
+
+./_433D -? # for help
+
+By default _433D returns two values for each read code, being the code and the number of bits. e.g.
+
+8246180 24
+
+If you plan to transmit the code it is useful to know the intercode gap
+as well as the short and long pulse length.  To see this information add
+the -f option to the command line, e.g. ./_433D -r10 -f might give
+
+8246180 24 9035 298 891
+
+where 9035 is the gap, 298 is the short pulse (t0) and 891 is the long
+pulse (t1).
+
+DOWNLOAD & INSTALL (pigpio)
+
+http://abyz.co.uk/rpi/pigpio/download.html
+
