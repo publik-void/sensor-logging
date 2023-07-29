@@ -1,5 +1,5 @@
-"""A scipt to be run daily, which scans the `minly` folder and gathers CSV files
-into archives for each day, leaving the newest files alone."""
+"""A script to be run daily, which scans the `minly` folder and gathers CSV
+files into archives for each day, leaving the newest files alone."""
 
 import itertools
 import datetime

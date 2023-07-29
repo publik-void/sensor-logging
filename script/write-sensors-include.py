@@ -122,6 +122,32 @@ def snippet_sensor_state(sensor_name, sensor_params):
       str += indent(f'unsigned {field_name}_count{{0u}};\n')
   return str + f'}};\n'
 
+def snippet_init_state(sensor_name, sensor_params):
+  return textwrap.dedent(f'''\
+    auto init_state({sensor_name} const &) {{
+      return {sensor_name}_state{{}};
+    }}
+    ''')
+
+def snippet_setup_io(sensor_name, sensor_params):
+  return textwrap.dedent(f'''\
+    auto setup_{sensor_name}_io(auto const &pi, auto const &);
+
+    auto setup_io({sensor_name} const &, auto const &pi, auto const &args) {{
+      return setup_{sensor_name}_io(pi, args);
+    }}
+    ''')
+
+def snippet_sample(sensor_name, sensor_params):
+  return textwrap.dedent(f'''\
+    {sensor_name} sample_{sensor_name}(auto const &, auto const &);
+
+    {sensor_name} sample('''
+    f'''{sensor_name} const &, auto const &clock, auto const &sensor_io) {{
+      return sample_{sensor_name}(clock, sensor_io);
+    }}
+    ''')
+
 def snippet_aggregation_step(sensor_name, sensor_params):
   str = f'auto aggregation_step(\n'
   str += indent(f'{sensor_name} const aggregate,\n', 2)
@@ -134,7 +160,7 @@ def snippet_aggregation_step(sensor_name, sensor_params):
                          static_cast<sensor_state>(state),
                          static_cast<sensor>(sample))}};\n'''))
   for field_name, field_params in sensor_params.items():
-    str += indent(f'auto const {field_name}{{optional_apply('
+    str += indent(f'auto const {field_name}{{util::optional_apply('
       f'aggregation_step_{field_params["aggregate"]},\n')
     str += indent(f'aggregate.{field_name}, sample.{field_name})}};\n', 2)
     if field_params["aggregate"] in ["mean"]:
@@ -169,8 +195,8 @@ def snippet_aggregation_finish(sensor_name, sensor_params):
                            static_cast<sensor_state>(state))}};\n'''))
   for field_name, field_params in sensor_params.items():
     if field_params["aggregate"] in ["mean"]:
-      str += indent(
-        f'auto const {field_name}{{optional_apply([=](auto const &x){{\n', 2)
+      str += indent(f'auto const '
+        f'{field_name}{{util::optional_apply([=](auto const &x){{\n', 2)
       str += indent(f'return x / static_cast<{field_params["type"]}>('
         f'state.{field_name}_count); }},\n', 3)
       str += indent(f'aggregate.{field_name})}};\n', 3)
@@ -248,7 +274,8 @@ def snippet_write_csv_fields(sensor_name, sensor_params):
       if "decimals" in field_params:
         width = f'1 + {field_params["decimals"]} + {width}'
       str += indent(f'\n<< std::setw({width})', 2)
-    str += indent(f'\n<< CSVWrapper{{data.{field_name}}}', 2)
+    str += indent(f'\n<< io::csv::CSVWrapper<std::optional<{field_params["type"]}>>'
+      f'{{data.{field_name}}}', 2)
   str += f';\n'
   str += indent(f'if (inner) return out << std::setw(0) '
     f'<< cc::csv_delimiter_string; else {{;\n')
@@ -332,9 +359,10 @@ def sensors_include(sensors):
     "width": "cc::timestamp_width",
     "decimals": "cc::timestamp_decimals"}}
 
-  for snippet in [snippet_struct, snippet_sensor_state,
-      snippet_aggregation_step, snippet_aggregation_finish, snippet_name,
-      snippet_field_names, snippet_write_csv_fields]:
+  for snippet in [snippet_struct, snippet_sensor_state, snippet_init_state,
+      snippet_setup_io, snippet_sample, snippet_aggregation_step,
+      snippet_aggregation_finish, snippet_name, snippet_field_names,
+      snippet_write_csv_fields]:
     str += indent(snippet("sensor", base_sensor_params) + sep)
     for sensor_name, sensor_params in sensors.items():
       str += indent(snippet(sensor_name, sensor_params) + sep)
