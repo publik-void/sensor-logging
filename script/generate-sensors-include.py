@@ -218,11 +218,11 @@ def snippet_name(sensor_name, sensor_params):
   return str + f'}}\n'
 
 def snippet_field_names(sensor_name, sensor_params):
-  str = (f'auto field_names({sensor_name} const &) '
-    f'{{\n')
-  str += indent(f'return std::array<std::string, {len(sensor_params)}>{{{{')
+  str = (f'std::array<std::string, {len(sensor_params)}> field_names('
+    f'{sensor_name} const &) {{\n')
+  str += indent(f'return {{{{')
   for field_name, field_params in sensor_params.items():
-    str += indent(f'\nstd::string{{"{field_name}"}},', 2)
+    str += indent(f'\n{{"{field_name}"}},', 2)
   str += indent(f'\n}}}};\n')
   return str + f'}}\n'
 
@@ -373,13 +373,25 @@ def sensors_include(sensors):
   return str + f'}} // namespace sensors\n'
 
 sensors_json_filename = os.path.join(os.path.dirname(__file__), "sensors.json")
+control_structs_json_filename = os.path.join(os.path.dirname(__file__),
+  "control-structs.json")
 sensors_cpp_filename = os.path.join(os.path.dirname(__file__), "..", "src",
   "sensors.generated.cpp")
 
 with open(sensors_json_filename, "r") as f:
   sensors = json.load(f)
+with open(control_structs_json_filename, "r") as f:
+  control_structs = json.load(f)
 
 # sensors = expand(sensors)
+for host_identifier, structs in control_structs.items():
+  for type_identifier in ["state", "params"]:
+    sensor = {field["name"]: field
+      for field in structs[f'struct_{type_identifier}']}
+    for field_name, field_params in sensor.items():
+      if not "aggregate" in field_params:
+        field_params["aggregate"] = "first"
+    sensors[f'control_{type_identifier}_{host_identifier}'] = sensor
 
 sensors_include_str = sensors_include(sensors)
 

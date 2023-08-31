@@ -1,5 +1,4 @@
 namespace control {
-
   // NOTE: This very basic (de-)serialization requires `obj` to satisfy certain
   // constraints. See e.g. `https://stackoverflow.com/a/523933`. Furthermore,
   // the produced data is not cross-platform, but it is not supposed to anyway.
@@ -73,51 +72,48 @@ namespace control {
     return path_dir_hostname_get(path_base) / cc::basename_file_control_params;
   }
 
-  struct control_state_t_base {};
-  struct control_params_t_base {};
+  struct control_state_base {};
+  struct control_params_base {};
 
-  // For these overloads/template specializations (`control_state_t_base`/
-  // `control_params_t_base`, i.e.  no device control and empty state and
+  // For these overloads/template specializations (`control_state_base`/
+  // `control_params_base`, i.e.  no device control and empty state and
   // parameter structs), don't load/save anything, only make sure that no files
   // are present.
 
-  void safe_serialize(control_state_t_base const &,
+  void safe_serialize(control_state_base const &,
       std::filesystem::path const &path_file) {
     file_clear(path_file);
   }
 
-  void safe_serialize(control_params_t_base const &,
+  void safe_serialize(control_params_base const &,
       std::filesystem::path const &path_file) {
     file_clear(path_file);
   }
 
-  template<> std::optional<control_state_t_base> safe_deserialize<
-      control_state_t_base>(std::filesystem::path const &path_file) {
+  template<> std::optional<control_state_base> safe_deserialize<
+      control_state_base>(std::filesystem::path const &path_file) {
     file_clear(path_file); return {};
   }
 
-  template<> std::optional<control_params_t_base> safe_deserialize<
-      control_params_t_base>(std::filesystem::path const &path_file) {
+  template<> std::optional<control_params_base> safe_deserialize<
+      control_params_base>(std::filesystem::path const &path_file) {
     file_clear(path_file); return {};
   }
+
+  sensors::sensor as_sensor(control_state_base const &,
+      std::optional<cc::timestamp_duration_t> const &timestamp = {}) {
+    return {timestamp};
+  }
+
+  sensors::sensor as_sensor(control_params_base const &,
+      std::optional<cc::timestamp_duration_t> const &timestamp = {}) {
+    return {timestamp};
+  }
+} // namespace control
 
 #include "control.generated.cpp"
-  struct control_state_t_lasse_raspberrypi_0 : public control_state_t_base {
-    bool ventilation{false};
-  };
 
-  struct control_params_t_lasse_raspberrypi_0 : public control_params_t_base {
-  };
-
-  using control_state_t =
-    std::conditional<cc::host == cc::Host::lasse_raspberrypi_0,
-      control_state_t_lasse_raspberrypi_0,
-      control_state_t_base>::type;
-  using control_params_t =
-    std::conditional<cc::host == cc::Host::lasse_raspberrypi_0,
-      control_params_t_lasse_raspberrypi_0,
-      control_params_t_base>::type;
-
+namespace control {
   // NOTE: The code below could probably be written or even generated with all
   // kinds of abstractions and modularity and whatnot. However, since this is
   // just a small-scale hobby project and as this is code that is highly
@@ -127,14 +123,14 @@ namespace control {
   // anyway that the `sensor-logging` binary is meant to be configured by
   // hard-coding and compiling.
 
-  auto control_tick(auto const &, control_state_t_base const &state,
+  auto control_tick(auto const &, control_state_base const &state,
       auto const &) {
     return state;
   }
 
   auto control_tick(auto const &pi,
-      control_state_t_lasse_raspberrypi_0 const &state, auto const &xs) {
-    control_state_t succ{state};
+      control_state_lasse_raspberrypi_0 const &state, auto const &xs) {
+    control_state succ{state};
 
     auto const set_ventilation{[&](bool const to){
       // TODO: Adjust the values here
@@ -145,4 +141,6 @@ namespace control {
 
     return succ;
   }
-}
+
+} // namespace control
+

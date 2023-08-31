@@ -3,6 +3,5 @@ __pycache__
 /build
 /data
 /logs
-/src/machine.cpp
-/src/sensors.cpp
+/src/*.generated.cpp
 

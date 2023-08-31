@@ -104,7 +104,6 @@ std::string log_error_prefix;
 #include "csv.cpp"
 #include "toml.cpp"
 #include "io.cpp"
-#include "sensors.generated.cpp"
 #include "sensors.cpp"
 
 namespace cc {
@@ -179,7 +178,6 @@ namespace cc {
 
 }
 
-#include "control.generated.cpp"
 #include "control.cpp"
 
 namespace {
@@ -524,7 +522,7 @@ int main(int const argc, char const * const argv[]) {
       }};
 
     // TODO: Construct from previous serialization if available
-    control::control_state_t control_state{};
+    control::control_state control_state{};
 
     bool error_during_resource_allocation;
 

@@ -56,6 +56,13 @@ namespace sensors {
     std::optional<int> pulse_length_long{};
   };
 
+  struct control_state_lasse_raspberrypi_0 : public sensor {
+    std::optional<bool> ventilation{};
+  };
+
+  struct control_params_lasse_raspberrypi_0 : public sensor {
+  };
+
   struct sensor_state {
     unsigned timestamp_count{0u};
   };
@@ -83,6 +90,12 @@ namespace sensors {
   struct lpd433_receiver_state : public sensor_state {
   };
 
+  struct control_state_lasse_raspberrypi_0_state : public sensor_state {
+  };
+
+  struct control_params_lasse_raspberrypi_0_state : public sensor_state {
+  };
+
   auto init_state(sensor const &) {
     return sensor_state{};
   }
@@ -101,6 +114,14 @@ namespace sensors {
 
   auto init_state(lpd433_receiver const &) {
     return lpd433_receiver_state{};
+  }
+
+  auto init_state(control_state_lasse_raspberrypi_0 const &) {
+    return control_state_lasse_raspberrypi_0_state{};
+  }
+
+  auto init_state(control_params_lasse_raspberrypi_0 const &) {
+    return control_params_lasse_raspberrypi_0_state{};
   }
 
   auto setup_sensor_io(auto const &pi, auto const &);
@@ -133,6 +154,18 @@ namespace sensors {
     return setup_lpd433_receiver_io(pi, args);
   }
 
+  auto setup_control_state_lasse_raspberrypi_0_io(auto const &pi, auto const &);
+
+  auto setup_io(control_state_lasse_raspberrypi_0 const &, auto const &pi, auto const &args) {
+    return setup_control_state_lasse_raspberrypi_0_io(pi, args);
+  }
+
+  auto setup_control_params_lasse_raspberrypi_0_io(auto const &pi, auto const &);
+
+  auto setup_io(control_params_lasse_raspberrypi_0 const &, auto const &pi, auto const &args) {
+    return setup_control_params_lasse_raspberrypi_0_io(pi, args);
+  }
+
   sensor sample_sensor(auto const &, auto const &);
 
   sensor sample(sensor const &, auto const &clock, auto const &sensor_io) {
@@ -161,6 +194,18 @@ namespace sensors {
 
   lpd433_receiver sample(lpd433_receiver const &, auto const &clock, auto const &sensor_io) {
     return sample_lpd433_receiver(clock, sensor_io);
+  }
+
+  control_state_lasse_raspberrypi_0 sample_control_state_lasse_raspberrypi_0(auto const &, auto const &);
+
+  control_state_lasse_raspberrypi_0 sample(control_state_lasse_raspberrypi_0 const &, auto const &clock, auto const &sensor_io) {
+    return sample_control_state_lasse_raspberrypi_0(clock, sensor_io);
+  }
+
+  control_params_lasse_raspberrypi_0 sample_control_params_lasse_raspberrypi_0(auto const &, auto const &);
+
+  control_params_lasse_raspberrypi_0 sample(control_params_lasse_raspberrypi_0 const &, auto const &clock, auto const &sensor_io) {
+    return sample_control_params_lasse_raspberrypi_0(clock, sensor_io);
   }
 
   auto aggregation_step(
@@ -356,6 +401,43 @@ namespace sensors {
     };
   }
 
+  auto aggregation_step(
+      control_state_lasse_raspberrypi_0 const aggregate,
+      control_state_lasse_raspberrypi_0_state const state,
+      control_state_lasse_raspberrypi_0 const sample) {
+    auto const [base_aggregate, base_state]{
+      aggregation_step(static_cast<sensor>(aggregate),
+                       static_cast<sensor_state>(state),
+                       static_cast<sensor>(sample))};
+    auto const ventilation{util::optional_apply(aggregation_step_first,
+      aggregate.ventilation, sample.ventilation)};
+
+    return std::pair<control_state_lasse_raspberrypi_0, control_state_lasse_raspberrypi_0_state>{{
+        base_aggregate,
+        ventilation,
+      }, {
+        base_state,
+      }
+    };
+  }
+
+  auto aggregation_step(
+      control_params_lasse_raspberrypi_0 const aggregate,
+      control_params_lasse_raspberrypi_0_state const state,
+      control_params_lasse_raspberrypi_0 const sample) {
+    auto const [base_aggregate, base_state]{
+      aggregation_step(static_cast<sensor>(aggregate),
+                       static_cast<sensor_state>(state),
+                       static_cast<sensor>(sample))};
+
+    return std::pair<control_params_lasse_raspberrypi_0, control_params_lasse_raspberrypi_0_state>{{
+        base_aggregate,
+      }, {
+        base_state,
+      }
+    };
+  }
+
   auto aggregation_finish(
       sensor const aggregate,
       sensor_state const state) {
@@ -488,6 +570,32 @@ namespace sensors {
     };
   }
 
+  auto aggregation_finish(
+      control_state_lasse_raspberrypi_0 const aggregate,
+      control_state_lasse_raspberrypi_0_state const state) {
+    auto const base_aggregate{
+      aggregation_finish(static_cast<sensor>(aggregate),
+                         static_cast<sensor_state>(state))};
+      auto const ventilation{aggregate.ventilation};
+
+    return control_state_lasse_raspberrypi_0{
+      base_aggregate,
+      ventilation,
+    };
+  }
+
+  auto aggregation_finish(
+      control_params_lasse_raspberrypi_0 const aggregate,
+      control_params_lasse_raspberrypi_0_state const state) {
+    auto const base_aggregate{
+      aggregation_finish(static_cast<sensor>(aggregate),
+                         static_cast<sensor_state>(state))};
+
+    return control_params_lasse_raspberrypi_0{
+      base_aggregate,
+    };
+  }
+
   std::string name(sensor const &) {
     return std::string{"sensor"};
   }
@@ -508,54 +616,73 @@ namespace sensors {
     return std::string{"lpd433_receiver"};
   }
 
-  auto field_names(sensor const &) {
-    return std::array<std::string, 1>{{
-      std::string{"timestamp"},
+  std::string name(control_state_lasse_raspberrypi_0 const &) {
+    return std::string{"control_state_lasse_raspberrypi_0"};
+  }
+
+  std::string name(control_params_lasse_raspberrypi_0 const &) {
+    return std::string{"control_params_lasse_raspberrypi_0"};
+  }
+
+  std::array<std::string, 1> field_names(sensor const &) {
+    return {{
+      {"timestamp"},
     }};
   }
 
-  auto field_names(sensorhub const &) {
-    return std::array<std::string, 13>{{
-      std::string{"ntc_temperature"},
-      std::string{"ntc_overrange"},
-      std::string{"ntc_error"},
-      std::string{"dht11_temperature"},
-      std::string{"dht11_humidity"},
-      std::string{"dht11_error"},
-      std::string{"bmp280_temperature"},
-      std::string{"bmp280_pressure"},
-      std::string{"bmp280_error"},
-      std::string{"brightness"},
-      std::string{"brightness_overrange"},
-      std::string{"brightness_error"},
-      std::string{"motion"},
+  std::array<std::string, 13> field_names(sensorhub const &) {
+    return {{
+      {"ntc_temperature"},
+      {"ntc_overrange"},
+      {"ntc_error"},
+      {"dht11_temperature"},
+      {"dht11_humidity"},
+      {"dht11_error"},
+      {"bmp280_temperature"},
+      {"bmp280_pressure"},
+      {"bmp280_error"},
+      {"brightness"},
+      {"brightness_overrange"},
+      {"brightness_error"},
+      {"motion"},
     }};
   }
 
-  auto field_names(dht22 const &) {
-    return std::array<std::string, 2>{{
-      std::string{"temperature"},
-      std::string{"humidity"},
+  std::array<std::string, 2> field_names(dht22 const &) {
+    return {{
+      {"temperature"},
+      {"humidity"},
     }};
   }
 
-  auto field_names(mhz19 const &) {
-    return std::array<std::string, 5>{{
-      std::string{"co2_concentration"},
-      std::string{"temperature"},
-      std::string{"status"},
-      std::string{"u0"},
-      std::string{"u1"},
+  std::array<std::string, 5> field_names(mhz19 const &) {
+    return {{
+      {"co2_concentration"},
+      {"temperature"},
+      {"status"},
+      {"u0"},
+      {"u1"},
     }};
   }
 
-  auto field_names(lpd433_receiver const &) {
-    return std::array<std::string, 5>{{
-      std::string{"code"},
-      std::string{"n_bits"},
-      std::string{"intercode_gap"},
-      std::string{"pulse_length_short"},
-      std::string{"pulse_length_long"},
+  std::array<std::string, 5> field_names(lpd433_receiver const &) {
+    return {{
+      {"code"},
+      {"n_bits"},
+      {"intercode_gap"},
+      {"pulse_length_short"},
+      {"pulse_length_long"},
+    }};
+  }
+
+  std::array<std::string, 1> field_names(control_state_lasse_raspberrypi_0 const &) {
+    return {{
+      {"ventilation"},
+    }};
+  }
+
+  std::array<std::string, 0> field_names(control_params_lasse_raspberrypi_0 const &) {
+    return {{
     }};
   }
 
@@ -727,6 +854,42 @@ namespace sensors {
       << std::setprecision(cc::field_decimals_default) << std::defaultfloat
       << std::setw(5)
       << io::csv::CSVWrapper<std::optional<int>>{data.pulse_length_long};
+    if (inner) return out << std::setw(0) << cc::csv_delimiter_string; else {;
+      out.precision(original_precision);
+      out.width(original_width);
+      out.flags(original_flags);
+      out.fill(original_fill);
+      return out << std::endl;
+    };
+  }
+
+  std::ostream &write_csv_fields(
+      std::ostream &out, control_state_lasse_raspberrypi_0 const &data, bool const inner = false) {
+    auto const original_precision{out.precision()};
+    auto const original_width{out.width()};
+    auto const original_flags{out.flags()};
+    auto const original_fill{out.fill()};
+    write_csv_fields(out, static_cast<sensor>(data), true);
+    out << std::setfill(' ')
+      << std::setprecision(cc::field_decimals_default) << std::defaultfloat
+      << io::csv::CSVWrapper<std::optional<bool>>{data.ventilation};
+    if (inner) return out << std::setw(0) << cc::csv_delimiter_string; else {;
+      out.precision(original_precision);
+      out.width(original_width);
+      out.flags(original_flags);
+      out.fill(original_fill);
+      return out << std::endl;
+    };
+  }
+
+  std::ostream &write_csv_fields(
+      std::ostream &out, control_params_lasse_raspberrypi_0 const &data, bool const inner = false) {
+    auto const original_precision{out.precision()};
+    auto const original_width{out.width()};
+    auto const original_flags{out.flags()};
+    auto const original_fill{out.fill()};
+    write_csv_fields(out, static_cast<sensor>(data), true);
+    out << std::setfill(' ');
     if (inner) return out << std::setw(0) << cc::csv_delimiter_string; else {;
       out.precision(original_precision);
       out.width(original_width);

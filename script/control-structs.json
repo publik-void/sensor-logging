@@ -1,2 +1,13 @@
 {
+  "lasse_raspberrypi_0": {
+    "struct_state": [
+      {
+        "name": "ventilation",
+        "type": "bool",
+        "default": "false"
+      }
+    ],
+    "struct_params": [
+    ]
+  }
 }

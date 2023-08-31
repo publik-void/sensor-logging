@@ -78,7 +78,7 @@ add_custom_command(
   OUTPUT ${PROJECT_SOURCE_DIR}/src/sensors.generated.cpp
   WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}
   COMMAND python3 script/generate-sensors-include.py
-  DEPENDS script/sensors.json script/generate-sensors-include.py
+  DEPENDS script/sensors.json script/control-structs.json script/generate-sensors-include.py
   COMMENT "Running `generate-sensors-include.py`…")
 add_custom_command(
   OUTPUT ${PROJECT_SOURCE_DIR}/src/control.generated.cpp
