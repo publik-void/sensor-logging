@@ -69,21 +69,30 @@ target_link_libraries(sensor-logging _433D)
 
 # Run code generation scripts whenever they or their inputs have changed
 add_custom_command(
-  OUTPUT ${PROJECT_SOURCE_DIR}/src/machine.cpp
+  OUTPUT ${PROJECT_SOURCE_DIR}/src/machine.generated.cpp
   WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}
-  COMMAND python3 script/write-machine-include.py
-  DEPENDS script/write-machine-include.py
-  COMMENT "Running `write-machine-include.py`…")
+  COMMAND python3 script/generate-machine-include.py
+  DEPENDS script/generate-machine-include.py
+  COMMENT "Running `generate-machine-include.py`…")
 add_custom_command(
-  OUTPUT ${PROJECT_SOURCE_DIR}/src/sensors.cpp
+  OUTPUT ${PROJECT_SOURCE_DIR}/src/sensors.generated.cpp
   WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}
-  COMMAND python3 script/write-sensors-include.py
-  DEPENDS script/sensors.json script/write-sensors-include.py
-  COMMENT "Running `write-sensors-include.py`…")
-add_custom_target(write-machine-include ALL
-  DEPENDS ${PROJECT_SOURCE_DIR}/src/machine.cpp)
-add_custom_target(write-sensors-include ALL
-  DEPENDS ${PROJECT_SOURCE_DIR}/src/sensors.cpp)
-add_dependencies(sensor-logging write-machine-include)
-add_dependencies(sensor-logging write-sensors-include)
+  COMMAND python3 script/generate-sensors-include.py
+  DEPENDS script/sensors.json script/generate-sensors-include.py
+  COMMENT "Running `generate-sensors-include.py`…")
+add_custom_command(
+  OUTPUT ${PROJECT_SOURCE_DIR}/src/control.generated.cpp
+  WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}
+  COMMAND python3 script/generate-control-include.py
+  DEPENDS script/control-structs.json script/generate-control-include.py
+  COMMENT "Running `generate-control-include.py`…")
+add_custom_target(generate-machine-include ALL
+  DEPENDS ${PROJECT_SOURCE_DIR}/src/machine.generated.cpp)
+add_custom_target(generate-sensors-include ALL
+  DEPENDS ${PROJECT_SOURCE_DIR}/src/sensors.generated.cpp)
+add_custom_target(generate-control-include ALL
+  DEPENDS ${PROJECT_SOURCE_DIR}/src/control.generated.cpp)
+add_dependencies(sensor-logging generate-machine-include)
+add_dependencies(sensor-logging generate-sensors-include)
+add_dependencies(sensor-logging generate-control-include)
 

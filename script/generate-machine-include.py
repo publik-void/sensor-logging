@@ -28,7 +28,7 @@ def machine_include():
   return str + f'}} // namespace cc\n'
 
 machine_cpp_filename = os.path.join(os.path.dirname(__file__), "..", "src",
-  "machine.cpp")
+  "machine.generated.cpp")
 machine_include_str = machine_include()
 
 with open(machine_cpp_filename, "w") as f:

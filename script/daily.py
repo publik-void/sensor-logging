@@ -29,15 +29,25 @@ import tarfile
 import lzma
 
 localhostname = socket.gethostname()
+env_keys = ["command", "file_extension", "hostname", "base_path", "names"]
+env_args = {k: v for (k, v) in
+  ((k, os.getenv("SENSOR_LOGGING_DAILY_PY_" + k.upper())) for k in env_keys)
+  if not v is None}
 
 # Parse arguments
 argparser = argparse.ArgumentParser(
   description = "Scans the `data/shortly` directory and gathers data files "
     "into archives for each day in the `data/daily` directory, while leaving "
     "the newest files alone. Writes a log into the `logs/daily` directory in "
-    "TOML format, to be accessible for both humans and machines.") 
-# TODO: Add epilog argument to the parser where it says that this has been
-# tested with PyPy version X and Python version Y
+    "TOML format, to be accessible for both humans and machines.",
+  epilog = "Because the script only deletes the original data files after "
+    "having written and checked the archive, interrupting it with SIGTERM and "
+    "especially SIGINT should not result in data loss. Incomplete archives "
+    "are not cleaned up automatically, however.",
+  **({"prog": env_args["command"]} if "command" in env_args else {}))
+# TODO: Add epilog text to the parser where it says that this has been tested
+# with PyPy version X and Python version Y.  Perhaps also say that it can be
+# called from the main `sensor-logging` binary.
 argparser.add_argument("--log-file",
   metavar = "<path>",
   help = "where to write the TOML-formatted log (appends to file if it exists,"
@@ -50,16 +60,18 @@ argparser.add_argument("--min-age",
   help = "data files with dates newer than this many days ago will not be "
     "archived (default: 2 (for security, should there ever be some dating "
     "issues))")
-argparser.add_argument("--file-extension",
-  default = "csv",
-  metavar = "<extension>",
-  help = "the file extension (case-sensitive, without dot) of the data files "
-  "to archive (default: csv)")
-argparser.add_argument("--hostname",
-  default = localhostname,
-  metavar = "<name>",
-  help = "archive data files identified with this hostname (default is the "
-    "name of the local host)")
+if not "file_extension" in env_args:
+  argparser.add_argument("--file-extension",
+    default = "csv",
+    metavar = "<extension>",
+    help = "the file extension (case-sensitive, without dot) of the data "
+      "files to archive (default: csv)")
+if not "hostname" in env_args:
+  argparser.add_argument("--hostname",
+    default = localhostname,
+    metavar = "<name>",
+    help = "archive data files identified with this hostname (default is the "
+      "name of the local host)")
 argparser.add_argument("--keep",
   action = "store_true",
   help = "do not delete the uncompressed data files")
@@ -70,13 +82,15 @@ argparser.add_argument("--verbose",
   action = "store_true",
   help = "write the individual names of all archived files (in order) into "
     "the log")
-argparser.add_argument("base_path",
-  help = "the `sensor-logging` root directory (must be passed explicitly in "
-    "order to avoid errors due to some bad default)")
-argparser.add_argument("name",
-  nargs = "*",
-  help = "the name of the physical instance of a sensor as given in the data "
-    "file name and the time series names")
+if not "base_path" in env_args:
+  argparser.add_argument("base_path",
+    help = "the `sensor-logging` root directory (must be passed explicitly in "
+      "order to avoid errors due to some bad default)")
+if not "names" in env_args:
+  argparser.add_argument("name",
+    nargs = "*",
+    help = "the name of the physical instance of a sensor as given in the "
+      "data file name and the time series names")
 
 args = argparser.parse_args()
 lzma.__spec__
@@ -86,13 +100,17 @@ config = {
   "keep_files": args.keep or args.dry,
   "verbose": args.verbose,
   "localhostname": localhostname,
-  "hostname": args.hostname,
-  "base_path": os.path.abspath(args.base_path),
+  "hostname":
+    env_args["hostname"] if "hostname" in env_args else args.hostname,
+  "base_path": os.path.abspath(
+    env_args["base_path"] if "base_path" in env_args else args.base_path),
   "log_file": "-" if args.log_file == "-" else
     None if args.log_file is None else
     os.path.abspath(args.log_file),
-  "sensors_physical_instance_names": args.name,
-  "file_extension": args.file_extension,
+  "sensors_physical_instance_names":
+    env_args["names"].split(",") if "names" in env_args else args.name,
+  "file_extension": env_args["file_extension"]
+    if "file_extension" in env_args else args.file_extension,
   "min_age_days": args.min_age,
 
   "tar_args": {"format": tarfile.GNU_FORMAT},
@@ -386,7 +404,7 @@ def daily(p, f = None, time_point_startup = time.gmtime(), pathss = None,
               try:
                 tic = time.time()
                 for filepath in filepaths:
-                  # TODO
+                  # TODO: Enable deletion of original data files
                   # print(f"os.remove(\"{filepath}\")")
                   # os.remove(filepath)
                   pass

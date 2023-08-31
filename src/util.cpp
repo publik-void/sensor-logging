@@ -110,6 +110,20 @@ namespace util {
     return pos;
   }
 
+  auto parse_arg_value(auto &&parser, auto &opts, auto const &key,
+      auto const &default_value) {
+    auto const &opt{opts[key]};
+    if (not opt.has_value()) return default_value;
+    try {
+      return parser(opt.value());
+    } catch (std::exception const &e) {
+      if constexpr (cc::log_errors) std::cerr << log_error_prefix
+        << "parsing option `" << key << "` (" << e.what() << "). Using default "
+          "value." << std::endl;
+      return default_value;
+    }
+  }
+
   long lfloor(auto num) {
     if constexpr (std::is_integral_v<decltype(num)>)
       return num;

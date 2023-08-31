@@ -109,5 +109,32 @@
       "aggregate" : "first",
       "width" : 3
     }
+  },
+  "lpd433_receiver" : {
+    "code" : {
+      "type" : "uint64_t",
+      "aggregate" : "first",
+      "width" : 20
+    },
+    "n_bits" : {
+      "type" : "int",
+      "aggregate" : "first",
+      "width" : 2
+    },
+    "intercode_gap" : {
+      "type" : "int",
+      "aggregate" : "first",
+      "width" : 5
+    },
+    "pulse_length_short" : {
+      "type" : "int",
+      "aggregate" : "first",
+      "width" : 5
+    },
+    "pulse_length_long" : {
+      "type" : "int",
+      "aggregate" : "first",
+      "width" : 5
+    }
   }
 }
