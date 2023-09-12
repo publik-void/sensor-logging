@@ -288,6 +288,8 @@ def snippet_write_csv_fields(sensor_name, sensor_params):
   return str + f'}}\n'
 
 def snippet_write_csv_field_names():
+  # TODO: Extend this function to do either CSV or TOML output
+  # and same for the field writing snippet
   def snippet(template, t, base_call):
     return textwrap.dedent(f'''{template}''' f'''\
       std::ostream &write_csv_field_names(std::ostream &out, {t} const &data,

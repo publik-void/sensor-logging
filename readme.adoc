@@ -1,7 +1,7 @@
 = Sensor Logging
 Lasse Schlör
 
-This readme file needs to be updated. I am leaving this text here is a
+This readme file needs to be updated. I am leaving this text here as a
 placeholder instead of the previous out-of-date text.
 
 == To-do list
