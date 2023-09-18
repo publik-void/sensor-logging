@@ -686,211 +686,39 @@ namespace sensors {
     }};
   }
 
-  std::ostream &write_csv_fields(
-      std::ostream &out, sensor const &data, bool const inner = false) {
+  std::ostream &write_fields(std::ostream &out, sensor const &data,
+      WriteFormat const wf = WriteFormat::csv,std::optional<std::string> const sensor_name_arg = {},
+      bool const inner = false) {
     auto const original_precision{out.precision()};
     auto const original_width{out.width()};
     auto const original_flags{out.flags()};
     auto const original_fill{out.fill()};
-    out << std::setfill(' ')
-      << std::setprecision(cc::timestamp_decimals) << std::fixed
-      << std::setw(1 + cc::timestamp_decimals + cc::timestamp_width)
-      << io::csv::CSVWrapper<std::optional<cc::timestamp_duration_t>>{data.timestamp};
-    if (inner) return out << std::setw(0) << cc::csv_delimiter_string; else {;
-      out.precision(original_precision);
-      out.width(original_width);
-      out.flags(original_flags);
-      out.fill(original_fill);
-      return out << std::endl;
-    };
-  }
 
-  std::ostream &write_csv_fields(
-      std::ostream &out, sensorhub const &data, bool const inner = false) {
-    auto const original_precision{out.precision()};
-    auto const original_width{out.width()};
-    auto const original_flags{out.flags()};
-    auto const original_fill{out.fill()};
-    write_csv_fields(out, static_cast<sensor>(data), true);
-    out << std::setfill(' ')
-      << std::setprecision(1) << std::fixed
-      << std::setw(1 + 1 + 3)
-      << io::csv::CSVWrapper<std::optional<float>>{data.ntc_temperature}
-      << std::setw(0) << cc::csv_delimiter_string
-      << std::setprecision(cc::field_decimals_default) << std::defaultfloat
-      << io::csv::CSVWrapper<std::optional<bool>>{data.ntc_overrange}
-      << std::setw(0) << cc::csv_delimiter_string
-      << std::setprecision(cc::field_decimals_default) << std::defaultfloat
-      << io::csv::CSVWrapper<std::optional<bool>>{data.ntc_error}
-      << std::setw(0) << cc::csv_delimiter_string
-      << std::setprecision(1) << std::fixed
-      << std::setw(1 + 1 + 3)
-      << io::csv::CSVWrapper<std::optional<float>>{data.dht11_temperature}
-      << std::setw(0) << cc::csv_delimiter_string
-      << std::setprecision(1) << std::fixed
-      << std::setw(1 + 1 + 3)
-      << io::csv::CSVWrapper<std::optional<float>>{data.dht11_humidity}
-      << std::setw(0) << cc::csv_delimiter_string
-      << std::setprecision(cc::field_decimals_default) << std::defaultfloat
-      << io::csv::CSVWrapper<std::optional<bool>>{data.dht11_error}
-      << std::setw(0) << cc::csv_delimiter_string
-      << std::setprecision(1) << std::fixed
-      << std::setw(1 + 1 + 3)
-      << io::csv::CSVWrapper<std::optional<float>>{data.bmp280_temperature}
-      << std::setw(0) << cc::csv_delimiter_string
-      << std::setprecision(1) << std::fixed
-      << std::setw(1 + 1 + 8)
-      << io::csv::CSVWrapper<std::optional<float>>{data.bmp280_pressure}
-      << std::setw(0) << cc::csv_delimiter_string
-      << std::setprecision(cc::field_decimals_default) << std::defaultfloat
-      << io::csv::CSVWrapper<std::optional<bool>>{data.bmp280_error}
-      << std::setw(0) << cc::csv_delimiter_string
-      << std::setprecision(1) << std::fixed
-      << std::setw(1 + 1 + 5)
-      << io::csv::CSVWrapper<std::optional<float>>{data.brightness}
-      << std::setw(0) << cc::csv_delimiter_string
-      << std::setprecision(cc::field_decimals_default) << std::defaultfloat
-      << io::csv::CSVWrapper<std::optional<bool>>{data.brightness_overrange}
-      << std::setw(0) << cc::csv_delimiter_string
-      << std::setprecision(cc::field_decimals_default) << std::defaultfloat
-      << io::csv::CSVWrapper<std::optional<bool>>{data.brightness_error}
-      << std::setw(0) << cc::csv_delimiter_string
-      << std::setprecision(2) << std::fixed
-      << std::setw(1 + 2 + 1)
-      << io::csv::CSVWrapper<std::optional<float>>{data.motion};
-    if (inner) return out << std::setw(0) << cc::csv_delimiter_string; else {;
-      out.precision(original_precision);
-      out.width(original_width);
-      out.flags(original_flags);
-      out.fill(original_fill);
-      return out << std::endl;
-    };
-  }
+    if (wf == WriteFormat::toml)
+      if (not inner) {
+        auto const sensor_name{sensor_name_arg.value_or(name(data))};
+        // NOTE: This requires `sensor_name` to be a proper TOML key.
+        if (sensor_name != "")
+          out << "[[" << sensor_name << ".data]]\n";
+        else out << "[[data]]\n";
+      }
 
-  std::ostream &write_csv_fields(
-      std::ostream &out, dht22 const &data, bool const inner = false) {
-    auto const original_precision{out.precision()};
-    auto const original_width{out.width()};
-    auto const original_flags{out.flags()};
-    auto const original_fill{out.fill()};
-    write_csv_fields(out, static_cast<sensor>(data), true);
-    out << std::setfill(' ')
-      << std::setprecision(1) << std::fixed
-      << std::setw(1 + 1 + 3)
-      << io::csv::CSVWrapper<std::optional<float>>{data.temperature}
-      << std::setw(0) << cc::csv_delimiter_string
-      << std::setprecision(1) << std::fixed
-      << std::setw(1 + 1 + 3)
-      << io::csv::CSVWrapper<std::optional<float>>{data.humidity};
-    if (inner) return out << std::setw(0) << cc::csv_delimiter_string; else {;
-      out.precision(original_precision);
-      out.width(original_width);
-      out.flags(original_flags);
-      out.fill(original_fill);
-      return out << std::endl;
-    };
-  }
-
-  std::ostream &write_csv_fields(
-      std::ostream &out, mhz19 const &data, bool const inner = false) {
-    auto const original_precision{out.precision()};
-    auto const original_width{out.width()};
-    auto const original_flags{out.flags()};
-    auto const original_fill{out.fill()};
-    write_csv_fields(out, static_cast<sensor>(data), true);
-    out << std::setfill(' ')
-      << std::setprecision(1) << std::fixed
-      << std::setw(1 + 1 + 4)
-      << io::csv::CSVWrapper<std::optional<float>>{data.co2_concentration}
-      << std::setw(0) << cc::csv_delimiter_string
-      << std::setprecision(1) << std::fixed
-      << std::setw(1 + 1 + 3)
-      << io::csv::CSVWrapper<std::optional<float>>{data.temperature}
-      << std::setw(0) << cc::csv_delimiter_string
-      << std::setprecision(cc::field_decimals_default) << std::defaultfloat
-      << std::setw(3)
-      << io::csv::CSVWrapper<std::optional<int>>{data.status}
-      << std::setw(0) << cc::csv_delimiter_string
-      << std::setprecision(cc::field_decimals_default) << std::defaultfloat
-      << std::setw(3)
-      << io::csv::CSVWrapper<std::optional<int>>{data.u0}
-      << std::setw(0) << cc::csv_delimiter_string
-      << std::setprecision(cc::field_decimals_default) << std::defaultfloat
-      << std::setw(3)
-      << io::csv::CSVWrapper<std::optional<int>>{data.u1};
-    if (inner) return out << std::setw(0) << cc::csv_delimiter_string; else {;
-      out.precision(original_precision);
-      out.width(original_width);
-      out.flags(original_flags);
-      out.fill(original_fill);
-      return out << std::endl;
-    };
-  }
-
-  std::ostream &write_csv_fields(
-      std::ostream &out, lpd433_receiver const &data, bool const inner = false) {
-    auto const original_precision{out.precision()};
-    auto const original_width{out.width()};
-    auto const original_flags{out.flags()};
-    auto const original_fill{out.fill()};
-    write_csv_fields(out, static_cast<sensor>(data), true);
-    out << std::setfill(' ')
-      << std::setprecision(cc::field_decimals_default) << std::defaultfloat
-      << std::setw(20)
-      << io::csv::CSVWrapper<std::optional<uint64_t>>{data.code}
-      << std::setw(0) << cc::csv_delimiter_string
-      << std::setprecision(cc::field_decimals_default) << std::defaultfloat
-      << std::setw(2)
-      << io::csv::CSVWrapper<std::optional<int>>{data.n_bits}
-      << std::setw(0) << cc::csv_delimiter_string
-      << std::setprecision(cc::field_decimals_default) << std::defaultfloat
-      << std::setw(5)
-      << io::csv::CSVWrapper<std::optional<int>>{data.intercode_gap}
-      << std::setw(0) << cc::csv_delimiter_string
-      << std::setprecision(cc::field_decimals_default) << std::defaultfloat
-      << std::setw(5)
-      << io::csv::CSVWrapper<std::optional<int>>{data.pulse_length_short}
-      << std::setw(0) << cc::csv_delimiter_string
-      << std::setprecision(cc::field_decimals_default) << std::defaultfloat
-      << std::setw(5)
-      << io::csv::CSVWrapper<std::optional<int>>{data.pulse_length_long};
-    if (inner) return out << std::setw(0) << cc::csv_delimiter_string; else {;
-      out.precision(original_precision);
-      out.width(original_width);
-      out.flags(original_flags);
-      out.fill(original_fill);
-      return out << std::endl;
-    };
-  }
-
-  std::ostream &write_csv_fields(
-      std::ostream &out, control_state_lasse_raspberrypi_0 const &data, bool const inner = false) {
-    auto const original_precision{out.precision()};
-    auto const original_width{out.width()};
-    auto const original_flags{out.flags()};
-    auto const original_fill{out.fill()};
-    write_csv_fields(out, static_cast<sensor>(data), true);
-    out << std::setfill(' ')
-      << std::setprecision(cc::field_decimals_default) << std::defaultfloat
-      << io::csv::CSVWrapper<std::optional<bool>>{data.ventilation};
-    if (inner) return out << std::setw(0) << cc::csv_delimiter_string; else {;
-      out.precision(original_precision);
-      out.width(original_width);
-      out.flags(original_flags);
-      out.fill(original_fill);
-      return out << std::endl;
-    };
-  }
-
-  std::ostream &write_csv_fields(
-      std::ostream &out, control_params_lasse_raspberrypi_0 const &data, bool const inner = false) {
-    auto const original_precision{out.precision()};
-    auto const original_width{out.width()};
-    auto const original_flags{out.flags()};
-    auto const original_fill{out.fill()};
-    write_csv_fields(out, static_cast<sensor>(data), true);
+    auto const names{field_names(data)};
     out << std::setfill(' ');
-    if (inner) return out << std::setw(0) << cc::csv_delimiter_string; else {;
+    out << std::setprecision(cc::timestamp_decimals) << std::fixed;
+    out << std::setw(1 + cc::timestamp_decimals + cc::timestamp_width);
+    if (wf == WriteFormat::csv)
+      out << io::csv::CSVWrapper<std::optional<cc::timestamp_duration_t>>{
+        data.timestamp};
+    else if  (wf == WriteFormat::toml)
+      //NOTE: This requires the sensor field names to be properTOML keys.
+      out << io::toml::TOMLWrapper{
+        std::make_pair(names[0], data.timestamp)};
+    if (inner) {
+      if (wf == WriteFormat::csv)
+        out << std::setw(0) << cc::csv_delimiter_string;
+      return out;
+    } else {
       out.precision(original_precision);
       out.width(original_width);
       out.flags(original_flags);
@@ -899,7 +727,475 @@ namespace sensors {
     };
   }
 
-  std::ostream &write_csv_field_names(std::ostream &out, sensor const &data,
+  std::ostream &write_fields(std::ostream &out, sensorhub const &data,
+      WriteFormat const wf = WriteFormat::csv,std::optional<std::string> const sensor_name_arg = {},
+      bool const inner = false) {
+    auto const original_precision{out.precision()};
+    auto const original_width{out.width()};
+    auto const original_flags{out.flags()};
+    auto const original_fill{out.fill()};
+
+    if (wf == WriteFormat::toml)
+      if (not inner) {
+        auto const sensor_name{sensor_name_arg.value_or(name(data))};
+        // NOTE: This requires `sensor_name` to be a proper TOML key.
+        if (sensor_name != "")
+          out << "[[" << sensor_name << ".data]]\n";
+        else out << "[[data]]\n";
+      }
+
+    write_fields(out, static_cast<sensor>(data), wf, sensor_name_arg, true);
+    auto const names{field_names(data)};
+    out << std::setfill(' ');
+    out << std::setprecision(1) << std::fixed;
+    out << std::setw(1 + 1 + 3);
+    if (wf == WriteFormat::csv)
+      out << io::csv::CSVWrapper<std::optional<float>>{
+        data.ntc_temperature};
+    else if  (wf == WriteFormat::toml)
+      //NOTE: This requires the sensor field names to be properTOML keys.
+      out << io::toml::TOMLWrapper{
+        std::make_pair(names[0], data.ntc_temperature)};
+    if (wf == WriteFormat::csv)
+      out << std::setw(0) << cc::csv_delimiter_string;
+    out << std::setprecision(cc::field_decimals_default) << std::defaultfloat;
+    if (wf == WriteFormat::csv)
+      out << io::csv::CSVWrapper<std::optional<bool>>{
+        data.ntc_overrange};
+    else if  (wf == WriteFormat::toml)
+      //NOTE: This requires the sensor field names to be properTOML keys.
+      out << io::toml::TOMLWrapper{
+        std::make_pair(names[1], data.ntc_overrange)};
+    if (wf == WriteFormat::csv)
+      out << std::setw(0) << cc::csv_delimiter_string;
+    out << std::setprecision(cc::field_decimals_default) << std::defaultfloat;
+    if (wf == WriteFormat::csv)
+      out << io::csv::CSVWrapper<std::optional<bool>>{
+        data.ntc_error};
+    else if  (wf == WriteFormat::toml)
+      //NOTE: This requires the sensor field names to be properTOML keys.
+      out << io::toml::TOMLWrapper{
+        std::make_pair(names[2], data.ntc_error)};
+    if (wf == WriteFormat::csv)
+      out << std::setw(0) << cc::csv_delimiter_string;
+    out << std::setprecision(1) << std::fixed;
+    out << std::setw(1 + 1 + 3);
+    if (wf == WriteFormat::csv)
+      out << io::csv::CSVWrapper<std::optional<float>>{
+        data.dht11_temperature};
+    else if  (wf == WriteFormat::toml)
+      //NOTE: This requires the sensor field names to be properTOML keys.
+      out << io::toml::TOMLWrapper{
+        std::make_pair(names[3], data.dht11_temperature)};
+    if (wf == WriteFormat::csv)
+      out << std::setw(0) << cc::csv_delimiter_string;
+    out << std::setprecision(1) << std::fixed;
+    out << std::setw(1 + 1 + 3);
+    if (wf == WriteFormat::csv)
+      out << io::csv::CSVWrapper<std::optional<float>>{
+        data.dht11_humidity};
+    else if  (wf == WriteFormat::toml)
+      //NOTE: This requires the sensor field names to be properTOML keys.
+      out << io::toml::TOMLWrapper{
+        std::make_pair(names[4], data.dht11_humidity)};
+    if (wf == WriteFormat::csv)
+      out << std::setw(0) << cc::csv_delimiter_string;
+    out << std::setprecision(cc::field_decimals_default) << std::defaultfloat;
+    if (wf == WriteFormat::csv)
+      out << io::csv::CSVWrapper<std::optional<bool>>{
+        data.dht11_error};
+    else if  (wf == WriteFormat::toml)
+      //NOTE: This requires the sensor field names to be properTOML keys.
+      out << io::toml::TOMLWrapper{
+        std::make_pair(names[5], data.dht11_error)};
+    if (wf == WriteFormat::csv)
+      out << std::setw(0) << cc::csv_delimiter_string;
+    out << std::setprecision(1) << std::fixed;
+    out << std::setw(1 + 1 + 3);
+    if (wf == WriteFormat::csv)
+      out << io::csv::CSVWrapper<std::optional<float>>{
+        data.bmp280_temperature};
+    else if  (wf == WriteFormat::toml)
+      //NOTE: This requires the sensor field names to be properTOML keys.
+      out << io::toml::TOMLWrapper{
+        std::make_pair(names[6], data.bmp280_temperature)};
+    if (wf == WriteFormat::csv)
+      out << std::setw(0) << cc::csv_delimiter_string;
+    out << std::setprecision(1) << std::fixed;
+    out << std::setw(1 + 1 + 8);
+    if (wf == WriteFormat::csv)
+      out << io::csv::CSVWrapper<std::optional<float>>{
+        data.bmp280_pressure};
+    else if  (wf == WriteFormat::toml)
+      //NOTE: This requires the sensor field names to be properTOML keys.
+      out << io::toml::TOMLWrapper{
+        std::make_pair(names[7], data.bmp280_pressure)};
+    if (wf == WriteFormat::csv)
+      out << std::setw(0) << cc::csv_delimiter_string;
+    out << std::setprecision(cc::field_decimals_default) << std::defaultfloat;
+    if (wf == WriteFormat::csv)
+      out << io::csv::CSVWrapper<std::optional<bool>>{
+        data.bmp280_error};
+    else if  (wf == WriteFormat::toml)
+      //NOTE: This requires the sensor field names to be properTOML keys.
+      out << io::toml::TOMLWrapper{
+        std::make_pair(names[8], data.bmp280_error)};
+    if (wf == WriteFormat::csv)
+      out << std::setw(0) << cc::csv_delimiter_string;
+    out << std::setprecision(1) << std::fixed;
+    out << std::setw(1 + 1 + 5);
+    if (wf == WriteFormat::csv)
+      out << io::csv::CSVWrapper<std::optional<float>>{
+        data.brightness};
+    else if  (wf == WriteFormat::toml)
+      //NOTE: This requires the sensor field names to be properTOML keys.
+      out << io::toml::TOMLWrapper{
+        std::make_pair(names[9], data.brightness)};
+    if (wf == WriteFormat::csv)
+      out << std::setw(0) << cc::csv_delimiter_string;
+    out << std::setprecision(cc::field_decimals_default) << std::defaultfloat;
+    if (wf == WriteFormat::csv)
+      out << io::csv::CSVWrapper<std::optional<bool>>{
+        data.brightness_overrange};
+    else if  (wf == WriteFormat::toml)
+      //NOTE: This requires the sensor field names to be properTOML keys.
+      out << io::toml::TOMLWrapper{
+        std::make_pair(names[10], data.brightness_overrange)};
+    if (wf == WriteFormat::csv)
+      out << std::setw(0) << cc::csv_delimiter_string;
+    out << std::setprecision(cc::field_decimals_default) << std::defaultfloat;
+    if (wf == WriteFormat::csv)
+      out << io::csv::CSVWrapper<std::optional<bool>>{
+        data.brightness_error};
+    else if  (wf == WriteFormat::toml)
+      //NOTE: This requires the sensor field names to be properTOML keys.
+      out << io::toml::TOMLWrapper{
+        std::make_pair(names[11], data.brightness_error)};
+    if (wf == WriteFormat::csv)
+      out << std::setw(0) << cc::csv_delimiter_string;
+    out << std::setprecision(2) << std::fixed;
+    out << std::setw(1 + 2 + 1);
+    if (wf == WriteFormat::csv)
+      out << io::csv::CSVWrapper<std::optional<float>>{
+        data.motion};
+    else if  (wf == WriteFormat::toml)
+      //NOTE: This requires the sensor field names to be properTOML keys.
+      out << io::toml::TOMLWrapper{
+        std::make_pair(names[12], data.motion)};
+    if (inner) {
+      if (wf == WriteFormat::csv)
+        out << std::setw(0) << cc::csv_delimiter_string;
+      return out;
+    } else {
+      out.precision(original_precision);
+      out.width(original_width);
+      out.flags(original_flags);
+      out.fill(original_fill);
+      return out << std::endl;
+    };
+  }
+
+  std::ostream &write_fields(std::ostream &out, dht22 const &data,
+      WriteFormat const wf = WriteFormat::csv,std::optional<std::string> const sensor_name_arg = {},
+      bool const inner = false) {
+    auto const original_precision{out.precision()};
+    auto const original_width{out.width()};
+    auto const original_flags{out.flags()};
+    auto const original_fill{out.fill()};
+
+    if (wf == WriteFormat::toml)
+      if (not inner) {
+        auto const sensor_name{sensor_name_arg.value_or(name(data))};
+        // NOTE: This requires `sensor_name` to be a proper TOML key.
+        if (sensor_name != "")
+          out << "[[" << sensor_name << ".data]]\n";
+        else out << "[[data]]\n";
+      }
+
+    write_fields(out, static_cast<sensor>(data), wf, sensor_name_arg, true);
+    auto const names{field_names(data)};
+    out << std::setfill(' ');
+    out << std::setprecision(1) << std::fixed;
+    out << std::setw(1 + 1 + 3);
+    if (wf == WriteFormat::csv)
+      out << io::csv::CSVWrapper<std::optional<float>>{
+        data.temperature};
+    else if  (wf == WriteFormat::toml)
+      //NOTE: This requires the sensor field names to be properTOML keys.
+      out << io::toml::TOMLWrapper{
+        std::make_pair(names[0], data.temperature)};
+    if (wf == WriteFormat::csv)
+      out << std::setw(0) << cc::csv_delimiter_string;
+    out << std::setprecision(1) << std::fixed;
+    out << std::setw(1 + 1 + 3);
+    if (wf == WriteFormat::csv)
+      out << io::csv::CSVWrapper<std::optional<float>>{
+        data.humidity};
+    else if  (wf == WriteFormat::toml)
+      //NOTE: This requires the sensor field names to be properTOML keys.
+      out << io::toml::TOMLWrapper{
+        std::make_pair(names[1], data.humidity)};
+    if (inner) {
+      if (wf == WriteFormat::csv)
+        out << std::setw(0) << cc::csv_delimiter_string;
+      return out;
+    } else {
+      out.precision(original_precision);
+      out.width(original_width);
+      out.flags(original_flags);
+      out.fill(original_fill);
+      return out << std::endl;
+    };
+  }
+
+  std::ostream &write_fields(std::ostream &out, mhz19 const &data,
+      WriteFormat const wf = WriteFormat::csv,std::optional<std::string> const sensor_name_arg = {},
+      bool const inner = false) {
+    auto const original_precision{out.precision()};
+    auto const original_width{out.width()};
+    auto const original_flags{out.flags()};
+    auto const original_fill{out.fill()};
+
+    if (wf == WriteFormat::toml)
+      if (not inner) {
+        auto const sensor_name{sensor_name_arg.value_or(name(data))};
+        // NOTE: This requires `sensor_name` to be a proper TOML key.
+        if (sensor_name != "")
+          out << "[[" << sensor_name << ".data]]\n";
+        else out << "[[data]]\n";
+      }
+
+    write_fields(out, static_cast<sensor>(data), wf, sensor_name_arg, true);
+    auto const names{field_names(data)};
+    out << std::setfill(' ');
+    out << std::setprecision(1) << std::fixed;
+    out << std::setw(1 + 1 + 4);
+    if (wf == WriteFormat::csv)
+      out << io::csv::CSVWrapper<std::optional<float>>{
+        data.co2_concentration};
+    else if  (wf == WriteFormat::toml)
+      //NOTE: This requires the sensor field names to be properTOML keys.
+      out << io::toml::TOMLWrapper{
+        std::make_pair(names[0], data.co2_concentration)};
+    if (wf == WriteFormat::csv)
+      out << std::setw(0) << cc::csv_delimiter_string;
+    out << std::setprecision(1) << std::fixed;
+    out << std::setw(1 + 1 + 3);
+    if (wf == WriteFormat::csv)
+      out << io::csv::CSVWrapper<std::optional<float>>{
+        data.temperature};
+    else if  (wf == WriteFormat::toml)
+      //NOTE: This requires the sensor field names to be properTOML keys.
+      out << io::toml::TOMLWrapper{
+        std::make_pair(names[1], data.temperature)};
+    if (wf == WriteFormat::csv)
+      out << std::setw(0) << cc::csv_delimiter_string;
+    out << std::setprecision(cc::field_decimals_default) << std::defaultfloat;
+    out << std::setw(3);
+    if (wf == WriteFormat::csv)
+      out << io::csv::CSVWrapper<std::optional<int>>{
+        data.status};
+    else if  (wf == WriteFormat::toml)
+      //NOTE: This requires the sensor field names to be properTOML keys.
+      out << io::toml::TOMLWrapper{
+        std::make_pair(names[2], data.status)};
+    if (wf == WriteFormat::csv)
+      out << std::setw(0) << cc::csv_delimiter_string;
+    out << std::setprecision(cc::field_decimals_default) << std::defaultfloat;
+    out << std::setw(3);
+    if (wf == WriteFormat::csv)
+      out << io::csv::CSVWrapper<std::optional<int>>{
+        data.u0};
+    else if  (wf == WriteFormat::toml)
+      //NOTE: This requires the sensor field names to be properTOML keys.
+      out << io::toml::TOMLWrapper{
+        std::make_pair(names[3], data.u0)};
+    if (wf == WriteFormat::csv)
+      out << std::setw(0) << cc::csv_delimiter_string;
+    out << std::setprecision(cc::field_decimals_default) << std::defaultfloat;
+    out << std::setw(3);
+    if (wf == WriteFormat::csv)
+      out << io::csv::CSVWrapper<std::optional<int>>{
+        data.u1};
+    else if  (wf == WriteFormat::toml)
+      //NOTE: This requires the sensor field names to be properTOML keys.
+      out << io::toml::TOMLWrapper{
+        std::make_pair(names[4], data.u1)};
+    if (inner) {
+      if (wf == WriteFormat::csv)
+        out << std::setw(0) << cc::csv_delimiter_string;
+      return out;
+    } else {
+      out.precision(original_precision);
+      out.width(original_width);
+      out.flags(original_flags);
+      out.fill(original_fill);
+      return out << std::endl;
+    };
+  }
+
+  std::ostream &write_fields(std::ostream &out, lpd433_receiver const &data,
+      WriteFormat const wf = WriteFormat::csv,std::optional<std::string> const sensor_name_arg = {},
+      bool const inner = false) {
+    auto const original_precision{out.precision()};
+    auto const original_width{out.width()};
+    auto const original_flags{out.flags()};
+    auto const original_fill{out.fill()};
+
+    if (wf == WriteFormat::toml)
+      if (not inner) {
+        auto const sensor_name{sensor_name_arg.value_or(name(data))};
+        // NOTE: This requires `sensor_name` to be a proper TOML key.
+        if (sensor_name != "")
+          out << "[[" << sensor_name << ".data]]\n";
+        else out << "[[data]]\n";
+      }
+
+    write_fields(out, static_cast<sensor>(data), wf, sensor_name_arg, true);
+    auto const names{field_names(data)};
+    out << std::setfill(' ');
+    out << std::setprecision(cc::field_decimals_default) << std::defaultfloat;
+    out << std::setw(20);
+    if (wf == WriteFormat::csv)
+      out << io::csv::CSVWrapper<std::optional<uint64_t>>{
+        data.code};
+    else if  (wf == WriteFormat::toml)
+      //NOTE: This requires the sensor field names to be properTOML keys.
+      out << io::toml::TOMLWrapper{
+        std::make_pair(names[0], data.code)};
+    if (wf == WriteFormat::csv)
+      out << std::setw(0) << cc::csv_delimiter_string;
+    out << std::setprecision(cc::field_decimals_default) << std::defaultfloat;
+    out << std::setw(2);
+    if (wf == WriteFormat::csv)
+      out << io::csv::CSVWrapper<std::optional<int>>{
+        data.n_bits};
+    else if  (wf == WriteFormat::toml)
+      //NOTE: This requires the sensor field names to be properTOML keys.
+      out << io::toml::TOMLWrapper{
+        std::make_pair(names[1], data.n_bits)};
+    if (wf == WriteFormat::csv)
+      out << std::setw(0) << cc::csv_delimiter_string;
+    out << std::setprecision(cc::field_decimals_default) << std::defaultfloat;
+    out << std::setw(5);
+    if (wf == WriteFormat::csv)
+      out << io::csv::CSVWrapper<std::optional<int>>{
+        data.intercode_gap};
+    else if  (wf == WriteFormat::toml)
+      //NOTE: This requires the sensor field names to be properTOML keys.
+      out << io::toml::TOMLWrapper{
+        std::make_pair(names[2], data.intercode_gap)};
+    if (wf == WriteFormat::csv)
+      out << std::setw(0) << cc::csv_delimiter_string;
+    out << std::setprecision(cc::field_decimals_default) << std::defaultfloat;
+    out << std::setw(5);
+    if (wf == WriteFormat::csv)
+      out << io::csv::CSVWrapper<std::optional<int>>{
+        data.pulse_length_short};
+    else if  (wf == WriteFormat::toml)
+      //NOTE: This requires the sensor field names to be properTOML keys.
+      out << io::toml::TOMLWrapper{
+        std::make_pair(names[3], data.pulse_length_short)};
+    if (wf == WriteFormat::csv)
+      out << std::setw(0) << cc::csv_delimiter_string;
+    out << std::setprecision(cc::field_decimals_default) << std::defaultfloat;
+    out << std::setw(5);
+    if (wf == WriteFormat::csv)
+      out << io::csv::CSVWrapper<std::optional<int>>{
+        data.pulse_length_long};
+    else if  (wf == WriteFormat::toml)
+      //NOTE: This requires the sensor field names to be properTOML keys.
+      out << io::toml::TOMLWrapper{
+        std::make_pair(names[4], data.pulse_length_long)};
+    if (inner) {
+      if (wf == WriteFormat::csv)
+        out << std::setw(0) << cc::csv_delimiter_string;
+      return out;
+    } else {
+      out.precision(original_precision);
+      out.width(original_width);
+      out.flags(original_flags);
+      out.fill(original_fill);
+      return out << std::endl;
+    };
+  }
+
+  std::ostream &write_fields(std::ostream &out, control_state_lasse_raspberrypi_0 const &data,
+      WriteFormat const wf = WriteFormat::csv,std::optional<std::string> const sensor_name_arg = {},
+      bool const inner = false) {
+    auto const original_precision{out.precision()};
+    auto const original_width{out.width()};
+    auto const original_flags{out.flags()};
+    auto const original_fill{out.fill()};
+
+    if (wf == WriteFormat::toml)
+      if (not inner) {
+        auto const sensor_name{sensor_name_arg.value_or(name(data))};
+        // NOTE: This requires `sensor_name` to be a proper TOML key.
+        if (sensor_name != "")
+          out << "[[" << sensor_name << ".data]]\n";
+        else out << "[[data]]\n";
+      }
+
+    write_fields(out, static_cast<sensor>(data), wf, sensor_name_arg, true);
+    auto const names{field_names(data)};
+    out << std::setfill(' ');
+    out << std::setprecision(cc::field_decimals_default) << std::defaultfloat;
+    if (wf == WriteFormat::csv)
+      out << io::csv::CSVWrapper<std::optional<bool>>{
+        data.ventilation};
+    else if  (wf == WriteFormat::toml)
+      //NOTE: This requires the sensor field names to be properTOML keys.
+      out << io::toml::TOMLWrapper{
+        std::make_pair(names[0], data.ventilation)};
+    if (inner) {
+      if (wf == WriteFormat::csv)
+        out << std::setw(0) << cc::csv_delimiter_string;
+      return out;
+    } else {
+      out.precision(original_precision);
+      out.width(original_width);
+      out.flags(original_flags);
+      out.fill(original_fill);
+      return out << std::endl;
+    };
+  }
+
+  std::ostream &write_fields(std::ostream &out, control_params_lasse_raspberrypi_0 const &data,
+      WriteFormat const wf = WriteFormat::csv,std::optional<std::string> const sensor_name_arg = {},
+      bool const inner = false) {
+    auto const original_precision{out.precision()};
+    auto const original_width{out.width()};
+    auto const original_flags{out.flags()};
+    auto const original_fill{out.fill()};
+
+    if (wf == WriteFormat::toml)
+      if (not inner) {
+        auto const sensor_name{sensor_name_arg.value_or(name(data))};
+        // NOTE: This requires `sensor_name` to be a proper TOML key.
+        if (sensor_name != "")
+          out << "[[" << sensor_name << ".data]]\n";
+        else out << "[[data]]\n";
+      }
+
+    write_fields(out, static_cast<sensor>(data), wf, sensor_name_arg, true);
+    auto const names{field_names(data)};
+    out << std::setfill(' ');
+    if (inner) {
+      if (wf == WriteFormat::csv)
+        out << std::setw(0) << cc::csv_delimiter_string;
+      return out;
+    } else {
+      out.precision(original_precision);
+      out.width(original_width);
+      out.flags(original_flags);
+      out.fill(original_fill);
+      return out << std::endl;
+    };
+  }
+
+  std::ostream &write_field_names(std::ostream &out, sensor const &data,
+      WriteFormat const wf = WriteFormat::csv,
       std::optional<std::string> const sensor_name_arg = {},
       bool const inner = false) {
     auto const original_precision{out.precision()};
@@ -907,14 +1203,31 @@ namespace sensors {
     auto const original_flags{out.flags()};
     auto const original_fill{out.fill()};
     out << std::setw(0);
-    std::string sensor_name{sensor_name_arg.value_or(name(data))};
-    if (sensor_name != "") sensor_name += "_";
 
+    std::string sensor_name{sensor_name_arg.value_or(name(data))};
+    if (wf == WriteFormat::toml)
+      if (not inner) {
+        // NOTE: This requires `sensor_name` to be a proper TOML key.
+        if (sensor_name != "") out << "[" << sensor_name << "]\n";
+        out << "field_names = [\n";
+      }
+
+    // NOTE: This code could make use of more abstraction and less
+    // reinventing the wheel, but I don't care, for now…
     auto const field_names_buffer{field_names(data)};
-    for (auto const &field_name : field_names_buffer) {
-      out << "\"" << sensor_name << field_name << "\"";
-      if (inner or &field_name != &field_names_buffer.back())
-        out << cc::csv_delimiter_string;
+    if (wf == WriteFormat::csv) {
+      if (sensor_name != "") sensor_name += "_";
+      for (auto const &field_name : field_names_buffer) {
+        out << "\"" << sensor_name << field_name << "\"";
+        if (inner or &field_name != &field_names_buffer.back())
+          out << cc::csv_delimiter_string;
+      }
+    } else if (wf == WriteFormat::toml) {
+      for (auto const &field_name : field_names_buffer) {
+        io::toml::indent(out) << "\"" << field_name << "\"";
+        if (inner or &field_name != &field_names_buffer.back())
+        out << ",\n"; else out << "]\n";
+      }
     }
     if (inner) return out; else {
       out.precision(original_precision);
@@ -925,8 +1238,8 @@ namespace sensors {
     }
   }
 
-  template<class T>
-  std::ostream &write_csv_field_names(std::ostream &out, T const &data,
+  std::ostream &write_field_names(std::ostream &out, auto const &data,
+      WriteFormat const wf = WriteFormat::csv,
       std::optional<std::string> const sensor_name_arg = {},
       bool const inner = false) {
     auto const original_precision{out.precision()};
@@ -934,17 +1247,34 @@ namespace sensors {
     auto const original_flags{out.flags()};
     auto const original_fill{out.fill()};
     out << std::setw(0);
-    std::string sensor_name{sensor_name_arg.value_or(name(data))};
-    if (sensor_name != "") sensor_name += "_";
 
-    write_csv_field_names(out, static_cast<sensor>(data),
+    std::string sensor_name{sensor_name_arg.value_or(name(data))};
+    if (wf == WriteFormat::toml)
+      if (not inner) {
+        // NOTE: This requires `sensor_name` to be a proper TOML key.
+        if (sensor_name != "") out << "[" << sensor_name << "]\n";
+        out << "field_names = [\n";
+      }
+
+    write_field_names(out, static_cast<sensor>(data), wf,
       std::optional<std::string>(sensor_name), true);
 
+    // NOTE: This code could make use of more abstraction and less
+    // reinventing the wheel, but I don't care, for now…
     auto const field_names_buffer{field_names(data)};
-    for (auto const &field_name : field_names_buffer) {
-      out << "\"" << sensor_name << field_name << "\"";
-      if (inner or &field_name != &field_names_buffer.back())
-        out << cc::csv_delimiter_string;
+    if (wf == WriteFormat::csv) {
+      if (sensor_name != "") sensor_name += "_";
+      for (auto const &field_name : field_names_buffer) {
+        out << "\"" << sensor_name << field_name << "\"";
+        if (inner or &field_name != &field_names_buffer.back())
+          out << cc::csv_delimiter_string;
+      }
+    } else if (wf == WriteFormat::toml) {
+      for (auto const &field_name : field_names_buffer) {
+        io::toml::indent(out) << "\"" << field_name << "\"";
+        if (inner or &field_name != &field_names_buffer.back())
+        out << ",\n"; else out << "]\n";
+      }
     }
     if (inner) return out; else {
       out.precision(original_precision);

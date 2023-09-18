@@ -1,3 +1,13 @@
+namespace sensors {
+  enum struct WriteFormat { csv, toml };
+
+  std::string write_format_ext(WriteFormat const wf) {
+    if (wf == WriteFormat::csv) return "csv";
+    else if (wf == WriteFormat::toml) return "toml";
+    else throw std::logic_error("`wf` must be one of the defined enum values");
+  }
+}
+
 #include "sensors.generated.cpp"
 
 namespace sensors {

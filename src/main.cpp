@@ -29,6 +29,7 @@
 #include <chrono>
 #include <ratio>
 #include <type_traits>
+#include <stdexcept>
 
 // TODO: Replace `#include` directives with `import` statements. On Debian
 // Bullseye, which is still the basis for the current Raspberry Pi OS at the
@@ -67,7 +68,8 @@ namespace cc { // `cc` stands for compile-time constants
 namespace cc {
   // General config
 
-  bool constexpr log_errors{not ndebug};
+  bool constexpr log_errors{true};
+  bool constexpr log_info{not ndebug};
   std::string_view constexpr log_info_string{"INFO"};
   std::string_view constexpr log_error_string{"ERROR"};
 
@@ -106,7 +108,39 @@ std::string log_error_prefix;
 #include "io.cpp"
 #include "sensors.cpp"
 
+enum struct MainMode {
+  help,
+  error,
+  print_config,
+  lpd433_listen,
+  lpd433_oneshot,
+  shortly,
+  daily};
+std::string main_mode_name(MainMode const &mode) {
+  if (mode == MainMode::help          ) return "help";
+  if (mode == MainMode::error         ) return "error";
+  if (mode == MainMode::print_config  ) return "print-config";
+  if (mode == MainMode::lpd433_listen ) return "lpd433-listen";
+  if (mode == MainMode::lpd433_oneshot) return "lpd433-oneshot";
+  if (mode == MainMode::shortly       ) return "shortly";
+  if (mode == MainMode::daily         ) return "daily";
+  return "";
+}
+
 namespace cc {
+
+  // NOTE: `std::unordered_map`'s implementation is not `constexpr`-friendly,
+  // so that's why this is only makred `const`. I believe it doesn't matter.
+  std::unordered_map<MainMode, sensors::WriteFormat> const
+    write_format_defaults{
+      {MainMode::help          , sensors::WriteFormat::csv },
+      {MainMode::error         , sensors::WriteFormat::csv },
+      {MainMode::print_config  , sensors::WriteFormat::toml},
+      {MainMode::lpd433_listen , sensors::WriteFormat::csv },
+      {MainMode::lpd433_oneshot, sensors::WriteFormat::csv },
+      {MainMode::shortly       , sensors::WriteFormat::csv },
+      {MainMode::daily         , sensors::WriteFormat::csv }};
+
   // Configuration of setup of physical sensors depending on machine
 
   using sensors_tuple_t_lasse_raspberrypi_0 = std::tuple<
@@ -222,15 +256,19 @@ int main(int const argc, char const * const argv[]) {
 
   std::vector<std::string> const args{argv, argv + argc};
 
-  if constexpr (cc::log_errors) {
+  if constexpr (cc::log_info) {
     log_info_prefix = args.front() + ": " + cc::log_info_string.data() + ": ";
-    log_error_prefix = args.front() + ": " + cc::log_error_string.data() + ": ";
     std::cerr << log_info_prefix
-      << "Error logging to stderr enabled." << std::endl;
+      << "Info logging to stderr enabled.\n" << log_info_prefix
+      << "Error logging to stderr " << (cc::log_errors ? "en" : "dis")
+      << "abled." << std::endl;
     if constexpr (not cc::ndebug) std::cerr << log_info_prefix
       << "`NDEBUG` not defined, meaning this is probably not a release build."
       << std::endl;
   }
+  if constexpr (cc::log_errors)
+    log_error_prefix = args.front() + ": " + cc::log_error_string.data() + ": ";
+
 
   using key_t = std::string;
   using flag_t = bool;
@@ -239,26 +277,43 @@ int main(int const argc, char const * const argv[]) {
   using opts_t = std::unordered_map<key_t, opt_t>;
 
   flags_t main_flags{};
-  opts_t main_opts{{"base-path", {}}};
+  opts_t main_opts{{"base-path", {}}, {"format", {}}};
   auto arg_itr{
     util::get_cmd_args(main_flags, main_opts, ++(args.begin()), args.end())};
 
-  enum struct MainMode { help, error, print_config, lpd433_listen,
-    lpd433_oneshot, shortly, daily};
   MainMode main_mode{MainMode::error};
 
   if (arg_itr >= args.end()) { if constexpr (cc::log_errors) std::cerr
     << log_error_prefix << "evaluating `mode` argument: not enough arguments."
     << std::endl; }
-  else if (*arg_itr == "help") main_mode = MainMode::help;
-  else if (*arg_itr == "print-config") main_mode = MainMode::print_config;
-  else if (*arg_itr == "lpd433-listen") main_mode = MainMode::lpd433_listen;
-  else if (*arg_itr == "lpd433-oneshot") main_mode = MainMode::lpd433_oneshot;
-  else if (*arg_itr == "shortly") main_mode = MainMode::shortly;
-  else if (*arg_itr == "daily") main_mode = MainMode::daily;
-  else { if constexpr (cc::log_errors) std::cerr << log_error_prefix
-    << "evaluating `mode` argument: got \"" << *arg_itr << "\"." << std::endl; }
-  ++arg_itr;
+  else {
+    using U = std::underlying_type_t<MainMode>;
+    for (MainMode mode{MainMode::help};
+        static_cast<U>(mode) <= static_cast<U>(MainMode::daily);
+        mode = static_cast<MainMode>(static_cast<U>(mode) + U{1}))
+      if (*arg_itr == main_mode_name(mode)) main_mode = mode;
+    if constexpr (cc::log_errors) if (main_mode == MainMode::error) std::cerr
+      << log_error_prefix << "evaluating `mode` argument: got \"" << *arg_itr
+      << "\"." << std::endl;
+    ++arg_itr;
+  }
+
+  sensors::WriteFormat const write_format{[&](){
+      auto const &opt_format{main_opts["format"]};
+      if (opt_format.has_value()) {
+        auto const opt_format_value{opt_format.value()};
+        using U = std::underlying_type_t<sensors::WriteFormat>;
+        for (auto wf{sensors::WriteFormat::csv};
+            static_cast<U>(wf) <= static_cast<U>(sensors::WriteFormat::toml);
+            wf = static_cast<sensors::WriteFormat>(static_cast<U>(wf) + U{1}))
+          if (opt_format_value == sensors::write_format_ext(wf)) return wf;
+        if constexpr (cc::log_errors) std::cerr << log_error_prefix
+          << "unrecognized format \"" << opt_format_value << "\"."
+          << std::endl;
+        main_mode = MainMode::error;
+      }
+      return cc::write_format_defaults.at(main_mode);
+    }()};
 
   auto constexpr duration_shortly_run{cc::sampling_interval *
     cc::samples_per_aggregate * cc::aggregates_per_run};
@@ -272,21 +327,28 @@ int main(int const argc, char const * const argv[]) {
 
   if (main_mode == MainMode::help or main_mode == MainMode::error) {
     std::cout << "Usage:\n"
-      << "  " << args.front()
-      << " [--base-path=<base path>] [--] mode [opts...] [--]\n"
+      << "  " << args.front() << " \\\n"
+        "  [--base-path=<base path>] [--format=<format>] [--] \\\n"
+        "  mode [opts...] [--] [args...]\n"
         "\n"
         "  Each mode can be safely interrupted by pressing Ctrl+C or sending a "
           "SIGTERM.\n"
         "\n"
-        "  The binary may have been built with or without error logging. If it "
-          "has, a\n"
-        "  notification will be printed to stderr at startup. If not, the "
-          "process may\n"
-        "  quit silently when an error has occurred.\n"
+        "  Logging of messages to stderr is separated into info and errors and "
+          "enabled or\n"
+        "  disabled at compile time. If this binary was built without error "
+          "logging, the\n"
+        "  process may quit silently when an error has occured. It will still "
+          "return a\n"
+        "  nonzero exit status, however.\n"
         "\n"
         "  `--base-path` sets the `sensor-logging` repository root path and is "
           "required\n"
         "  for any file IO, as it deliberately has no default value.\n"
+        "\n"
+        "  `--format` sets the output format. Possible values are `csv` and "
+          "`toml`. The\n"
+        "  default format depends on the `mode`.\n"
         "\n"
         "Modes:\n"
         "  help\n"
@@ -348,67 +410,85 @@ int main(int const argc, char const * const argv[]) {
       cc::sampling_interval.count()};
     auto constexpr run_duration_in_minutes{sampling_interval_in_seconds *
       cc::samples_per_aggregate * cc::aggregates_per_run / 60};
-    out
-      << "# Non-exhaustive config in TOML format\n"
-      << "\n"
-      #ifdef __DATE__
-      #ifdef __TIME__
-      // NOTE: It would of course be nice to have this be a proper TOML
-      // datetime, plus not depend on these macros being defined, but it's not
-      // that simple to get that working, and I don't want to spend more time
-      // on trying, because it's really not that important.
-      << io::toml::TOMLWrapper{
-          std::make_pair("compilation_local_datetime_macros",
-          std::make_tuple(__DATE__, __TIME__))}
-      #endif
-      #endif
-      << io::toml::TOMLWrapper{std::make_pair("hostname", cc::hostname)}
-      << io::toml::TOMLWrapper{std::make_pair("ndebug", cc::ndebug)}
-      << "\n"
-      << io::toml::TOMLWrapper{std::make_pair("process", args.front())};
-    if (main_opts["base-path"].has_value()) out
-      << io::toml::TOMLWrapper{std::make_pair("base_path",
-          main_opts["base-path"].value())};
-    out
-      << "\n"
-      << io::toml::TOMLWrapper{std::make_pair("time_point_startup",
-          time_point_startup)}
-      << io::toml::TOMLWrapper{std::make_pair("time_point_last_midnight",
-          time_point_last_midnight)}
-      << io::toml::TOMLWrapper{std::make_pair("time_point_next_shortly_run",
-          time_point_next_shortly_run)}
-      << "\n"
-      << io::toml::TOMLWrapper{std::make_pair("sampling_interval_in_seconds",
-          sampling_interval_in_seconds)}
-      << io::toml::TOMLWrapper{std::make_pair("samples_per_aggregate",
-          static_cast<signed>(cc::samples_per_aggregate))}
-      << io::toml::TOMLWrapper{std::make_pair("aggregates_per_run",
-          static_cast<signed>(cc::aggregates_per_run))}
-      << io::toml::TOMLWrapper{std::make_pair("run_duration_in_minutes",
-          static_cast<signed>(run_duration_in_minutes)),
-          "from the above 3 parameters"}
-      << "\n"
-      << io::toml::TOMLWrapper{std::make_pair("sensors", util::map_constexpr(
-          [](auto const &s){ return sensors::name(s); }, cc::blueprint))}
-      << io::toml::TOMLWrapper{std::make_pair("sensors_physical_instance_names",
-          cc::sensors_physical_instance_names)}
-      << io::toml::TOMLWrapper{std::make_pair("sensors_io_setup_args",
-          cc::sensors_io_setup_args)}
-      << "\n"
-      << io::toml::TOMLWrapper{std::make_pair("period_system_clock",
+    if (write_format == sensors::WriteFormat::csv) {
+      if constexpr (cc::log_errors) std::cerr << log_error_prefix
+        << "`csv` output not supported (implemented) in mode `print-config`."
+        << std::endl;
+      return cc::exit_code_error;
+    } else {
+      out
+        << "# Non-exhaustive config in TOML format\n"
+        << "\n"
+        #ifdef __DATE__
+        #ifdef __TIME__
+        // NOTE: It would of course be nice to have this be a proper TOML
+        // datetime, plus not depend on these macros being defined, but it's not
+        // that simple to get that working, and I don't want to spend more time
+        // on trying, because it's really not that important.
+        << io::toml::TOMLWrapper{
+            std::make_pair("compilation_local_datetime_macros",
+            std::make_tuple(__DATE__, __TIME__))}
+        #endif
+        #endif
+        << io::toml::TOMLWrapper{std::make_pair("hostname", cc::hostname)}
+        << io::toml::TOMLWrapper{std::make_pair("ndebug", cc::ndebug)}
+        << io::toml::TOMLWrapper{std::make_pair("log_info", cc::log_info)}
+        << io::toml::TOMLWrapper{std::make_pair("log_errors", cc::log_errors)}
+        << "\n"
+        << io::toml::TOMLWrapper{std::make_pair("process", args.front())};
+      if (main_opts["base-path"].has_value()) out
+        << io::toml::TOMLWrapper{std::make_pair("base_path",
+            main_opts["base-path"].value())};
+      if (main_opts["format"].has_value()) out
+        << io::toml::TOMLWrapper{std::make_pair("format",
+            sensors::write_format_ext(write_format))};
+      out
+        << "\n"
+        << io::toml::TOMLWrapper{std::make_pair("time_point_startup",
+            time_point_startup)}
+        << io::toml::TOMLWrapper{std::make_pair("time_point_last_midnight",
+            time_point_last_midnight)}
+        << io::toml::TOMLWrapper{std::make_pair("time_point_next_shortly_run",
+            time_point_next_shortly_run)}
+        << "\n"
+        << io::toml::TOMLWrapper{std::make_pair("sampling_interval_in_seconds",
+            sampling_interval_in_seconds)}
+        << io::toml::TOMLWrapper{std::make_pair("samples_per_aggregate",
+            static_cast<signed>(cc::samples_per_aggregate))}
+        << io::toml::TOMLWrapper{std::make_pair("aggregates_per_run",
+            static_cast<signed>(cc::aggregates_per_run))}
+        << io::toml::TOMLWrapper{std::make_pair("run_duration_in_minutes",
+            static_cast<signed>(run_duration_in_minutes)),
+            "from the above 3 parameters"}
+        << "\n"
+        << io::toml::TOMLWrapper{std::make_pair("sensors", util::map_constexpr(
+            [](auto const &s){ return sensors::name(s); }, cc::blueprint))}
+        << io::toml::TOMLWrapper{std::make_pair(
+            "sensors_physical_instance_names",
+            cc::sensors_physical_instance_names)}
+        << io::toml::TOMLWrapper{std::make_pair("sensors_io_setup_args",
+            cc::sensors_io_setup_args)}
+        << "\n"
+        << io::toml::TOMLWrapper{std::make_pair("period_system_clock",
           static_cast<double>(std::chrono::system_clock::period::num) /
           static_cast<double>(std::chrono::system_clock::period::den))}
-      << io::toml::TOMLWrapper{std::make_pair("period_high_resolution_clock",
+        << io::toml::TOMLWrapper{std::make_pair("period_high_resolution_clock",
           static_cast<double>(std::chrono::high_resolution_clock::period::num) /
           static_cast<double>(std::chrono::high_resolution_clock::period::den))}
-      << "\n"
-      << io::toml::TOMLWrapper{std::make_pair("digits_float",
-        std::numeric_limits<float>::digits)}
-      << io::toml::TOMLWrapper{std::make_pair("digits_double",
-        std::numeric_limits<double>::digits)}
-      << io::toml::TOMLWrapper{std::make_pair("digits_long_double",
-        std::numeric_limits<long double>::digits)}
-      << std::flush;
+        << "\n"
+        << io::toml::TOMLWrapper{std::make_pair("digits_float",
+          std::numeric_limits<float>::digits)}
+        << io::toml::TOMLWrapper{std::make_pair("digits_double",
+          std::numeric_limits<double>::digits)}
+        << io::toml::TOMLWrapper{std::make_pair("digits_long_double",
+          std::numeric_limits<long double>::digits)}
+        << "\n"
+        << "[format_defaults]\n";
+        for (auto const& [k, v] : cc::write_format_defaults)
+          out << io::toml::TOMLWrapper{std::make_pair(main_mode_name(k),
+            sensors::write_format_ext(v))};
+        out << std::flush;
+      }
   } else if (main_mode == MainMode::lpd433_listen) {
     if (not cc::lpd433_receiver_gpio_index.has_value()) {
       if constexpr (cc::log_errors) std::cerr << log_error_prefix
@@ -426,12 +506,23 @@ int main(int const argc, char const * const argv[]) {
       util::parse_arg_value(parser, opts, "n-bits-max", 32)};
     auto const glitch{util::parse_arg_value(parser, opts, "glitch", 150)};
 
-    _433D_rx_CB_t const callback{+[](_433D_rx_data_t x){
-      std::chrono::system_clock const clock{};
-      sensors::write_csv_fields(std::cout, sensors::lpd433_receiver{
-        sensors::sample_sensor(clock), {x.code}, {x.bits}, {x.gap}, {x.t0},
-        {x.t1}});
-    }};
+    _433D_rx_CB_t const callback{
+      // TODO: This is ugly, because the lambda(s) may not capture
+      // `write_format`. Can it be done more elegantly?
+      write_format == sensors::WriteFormat::csv ?
+        +[](_433D_rx_data_t x){
+          std::chrono::system_clock const clock{};
+          sensors::write_fields(std::cout, sensors::lpd433_receiver{
+            sensors::sample_sensor(clock), {x.code}, {x.bits}, {x.gap}, {x.t0},
+            {x.t1}}, sensors::WriteFormat::csv, "");
+        } :
+        +[](_433D_rx_data_t x){
+          std::chrono::system_clock const clock{};
+          sensors::write_fields(std::cout, sensors::lpd433_receiver{
+            sensors::sample_sensor(clock), {x.code}, {x.bits}, {x.gap}, {x.t0},
+            {x.t1}}, sensors::WriteFormat::toml, "");
+        }
+    };
 
     io::Pi const pi{};
     if (io::errored(pi)) return cc::exit_code_error;
@@ -441,7 +532,8 @@ int main(int const argc, char const * const argv[]) {
     _433D_rx_set_bits(lpd433_receiver, n_bits_min, n_bits_max);
     _433D_rx_set_glitch(lpd433_receiver, glitch);
 
-    sensors::write_csv_field_names(std::cout, sensors::lpd433_receiver{}, "");
+    sensors::write_field_names(std::cout, sensors::lpd433_receiver{},
+      write_format, "");
 
     interruptible_wait();
   } else if (main_mode == MainMode::lpd433_oneshot) {
@@ -502,7 +594,8 @@ int main(int const argc, char const * const argv[]) {
     std::array<std::ofstream, cc::n_sensors> file_streams;
     auto const print_newlines{[&](){
         std::array<bool, cc::n_sensors> a;
-        for (auto &x : a) x = main_opts["base-path"].has_value();
+        for (auto &x : a) x = main_opts["base-path"].has_value() or
+          write_format != sensors::WriteFormat::csv;
         a[cc::n_sensors - 1] = true;
         return a;
       }()};
@@ -581,8 +674,8 @@ int main(int const argc, char const * const argv[]) {
             }
             if (error_during_resource_allocation) return;
 
-            std::filesystem::path const basename_file{
-              filename_prefix + "-" + name + ".csv"};
+            std::filesystem::path const basename_file{filename_prefix +
+              "-" + name + "." + sensors::write_format_ext(write_format)};
             auto const path_file{dirname_file / basename_file};
             try {
               if (std::filesystem::exists(path_file)) {
@@ -628,9 +721,10 @@ int main(int const argc, char const * const argv[]) {
       }, cc::blueprint, cc::sensors_io_setup_args)};
     if (error_during_resource_allocation) return cc::exit_code_error;
 
-    util::for_constexpr([](auto const &s, auto const &name,
+    util::for_constexpr([&](auto const &s, auto const &name,
           std::ostream * const &out, bool const &print_newline){
-        sensors::write_csv_field_names((*out), s, name, not print_newline); },
+        sensors::write_field_names(
+            (*out), s, write_format, name, not print_newline); },
       cc::blueprint, cc::sensors_physical_instance_names, outs, print_newlines);
 
     for (unsigned aggregate_index{0u};
@@ -662,9 +756,9 @@ int main(int const argc, char const * const argv[]) {
               return aggregation_finish(a, s);
             }, aggregate, state);
 
-          util::for_constexpr([](auto const &a, std::ostream * const &out,
-          bool const &print_newline){
-              sensors::write_csv_fields((*out), a, not print_newline);
+          util::for_constexpr([&](auto const &a, std::ostream * const &out,
+          bool const &print_newline){sensors::write_fields(
+              (*out), a, write_format, {}, not print_newline);
             }, aggregate, outs, print_newlines);
         }
 
@@ -730,9 +824,10 @@ int main(int const argc, char const * const argv[]) {
       return s; }()};
 
     std::string const command{
-      export_string("COMMAND", args.front() + " --base-path=<base_path> daily")
-        +
-      export_string("FILE_EXTENSION", "csv") +
+      export_string("COMMAND",
+        args.front() + " --base-path=<base_path> [--format=<format>] daily") +
+      export_string("FILE_EXTENSION",
+        sensors::write_format_ext(write_format)) +
       export_string("HOSTNAME", cc::hostname) +
       export_string("BASE_PATH", path_base.native()) +
       export_string("NAMES", sensors_physical_instance_names_comma_separated) +
@@ -740,7 +835,7 @@ int main(int const argc, char const * const argv[]) {
       "  { type python3 > /dev/null && python_interpreter=python3; }; } &&\n"
       "\"$python_interpreter\" " + quote(daily_py_path.native()) + args_quoted};
 
-    if constexpr (cc::log_errors) std::cerr << log_info_prefix
+    if constexpr (cc::log_info) std::cerr << log_info_prefix
       << "Running the following shell command:\n  "
       << std::regex_replace(command, std::regex{"\\n"}, "\n  ") << std::endl;
 
@@ -750,6 +845,7 @@ int main(int const argc, char const * const argv[]) {
     return cc::exit_code_error;
   }
 
+  if (arg_itr < args.end() and *arg_itr == "--") ++arg_itr;
   if constexpr (cc::log_errors) if (arg_itr < args.end()) std::cerr <<
     log_error_prefix << "evaluating trailing arguments starting from `" <<
     *arg_itr << "`." << std::endl;

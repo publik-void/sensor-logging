@@ -246,39 +246,66 @@ def snippet_field_names(sensor_name, sensor_params):
 #   str += indent(f'}};\n')
 #   return str + f'}}\n'
 
-def snippet_write_csv_fields(sensor_name, sensor_params):
-  str = f'std::ostream &write_csv_fields(\n'
-  str += indent(f'std::ostream &out, {sensor_name} const &data, '
-      f'bool const inner = false) {{\n', 2)
+def snippet_write_fields(sensor_name, sensor_params):
+  str = (f'std::ostream &write_fields('
+    f'std::ostream &out, {sensor_name} const &data,\n')
+  str += indent(f'WriteFormat const wf = WriteFormat::csv,'
+    f'std::optional<std::string> const sensor_name_arg = {{}},\n'
+    f'bool const inner = false) {{\n', 2)
   str += indent(f'auto const original_precision{{out.precision()}};\n')
   str += indent(f'auto const original_width{{out.width()}};\n')
   str += indent(f'auto const original_flags{{out.flags()}};\n')
   str += indent(f'auto const original_fill{{out.fill()}};\n')
+  str += indent(f'\n')
+
+  str += indent(f'if (wf == WriteFormat::toml)\n')
+  str += indent(f'if (not inner) {{\n', 2)
+  str += indent(
+    f'auto const sensor_name{{sensor_name_arg.value_or(name(data))}};\n'
+    f'// NOTE: This requires `sensor_name` to be a proper TOML key.\n'
+    f'if (sensor_name != "")\n', 3)
+  str += indent(f'out << "[[" << sensor_name << ".data]]\\n";\n', 4)
+  str += indent(f'else out << "[[data]]\\n";\n', 3)
+  str += indent(f'}}\n', 2)
+  str += indent(f'\n')
+
   if sensor_name != "sensor":
-    str += indent(f'write_csv_fields(out, static_cast<sensor>(data), true);\n')
-  str += indent(f'out << std::setfill(\' \')')
-  is_first_entry = True
+    str += indent(f'write_fields(out, static_cast<sensor>(data), wf, '
+      f'sensor_name_arg, true);\n')
+
+  str += indent(f'auto const names{{field_names(data)}};\n')
+  str += indent(f'out << std::setfill(\' \');\n')
+  i = 0
   for field_name, field_params in sensor_params.items():
-    if is_first_entry:
-      is_first_entry = False
-    else:
-      str += indent(f'\n<< std::setw(0) << cc::csv_delimiter_string', 2)
+    if i > 0:
+      str += indent(f'if (wf == WriteFormat::csv)\n')
+      str += indent(f'out << std::setw(0) << cc::csv_delimiter_string;\n', 2)
     if "decimals" in field_params:
-      str += indent(f'\n<< std::setprecision({field_params["decimals"]}) '
-        f'<< std::fixed', 2)
+      str += indent(f'out << std::setprecision({field_params["decimals"]}) '
+        f'<< std::fixed;\n')
     else:
-      str += indent(f'\n<< std::setprecision(cc::field_decimals_default) '
-        f'<< std::defaultfloat', 2)
+      str += indent(f'out << std::setprecision(cc::field_decimals_default) '
+        f'<< std::defaultfloat;\n')
     if "width" in field_params:
       width = field_params["width"]
       if "decimals" in field_params:
         width = f'1 + {field_params["decimals"]} + {width}'
-      str += indent(f'\n<< std::setw({width})', 2)
-    str += indent(f'\n<< io::csv::CSVWrapper<std::optional<{field_params["type"]}>>'
-      f'{{data.{field_name}}}', 2)
-  str += f';\n'
-  str += indent(f'if (inner) return out << std::setw(0) '
-    f'<< cc::csv_delimiter_string; else {{;\n')
+      str += indent(f'out << std::setw({width});\n')
+    str += indent(f'if (wf == WriteFormat::csv)\n')
+    str += indent(f'out << '
+      f'io::csv::CSVWrapper<std::optional<{field_params["type"]}>>{{\n', 2)
+    str += indent(f'data.{field_name}}};\n', 3)
+    str += indent(f'else if  (wf == WriteFormat::toml)\n')
+    str += indent(f'//NOTE: This requires the sensor field names to be proper'
+      f'TOML keys.\n', 2)
+    str += indent(f'out << io::toml::TOMLWrapper{{\n', 2)
+    str += indent(f'std::make_pair(names[{i}], data.{field_name})}};\n', 3)
+    i += 1
+  str += indent(f'if (inner) {{\n')
+  str += indent(f'if (wf == WriteFormat::csv)\n', 2)
+  str += indent(f'out << std::setw(0) << cc::csv_delimiter_string;\n', 3)
+  str += indent(f'return out;\n', 2)
+  str += indent(f'}} else {{\n')
   str += indent(f'out.precision(original_precision);\n', 2)
   str += indent(f'out.width(original_width);\n', 2)
   str += indent(f'out.flags(original_flags);\n', 2)
@@ -287,12 +314,11 @@ def snippet_write_csv_fields(sensor_name, sensor_params):
   str += indent(f'}};\n')
   return str + f'}}\n'
 
-def snippet_write_csv_field_names():
-  # TODO: Extend this function to do either CSV or TOML output
-  # and same for the field writing snippet
-  def snippet(template, t, base_call):
-    return textwrap.dedent(f'''{template}''' f'''\
-      std::ostream &write_csv_field_names(std::ostream &out, {t} const &data,
+def snippet_write_field_names():
+  def snippet(t, base_call):
+    return textwrap.dedent(f'''\
+      std::ostream &write_field_names(std::ostream &out, {t} const &data,
+          WriteFormat const wf = WriteFormat::csv,
           std::optional<std::string> const sensor_name_arg = {{}},
           bool const inner = false) {{
         auto const original_precision{{out.precision()}};
@@ -300,14 +326,31 @@ def snippet_write_csv_field_names():
         auto const original_flags{{out.flags()}};
         auto const original_fill{{out.fill()}};
         out << std::setw(0);
+
         std::string sensor_name{{sensor_name_arg.value_or(name(data))}};
-        if (sensor_name != "") sensor_name += "_";
+        if (wf == WriteFormat::toml)
+          if (not inner) {{
+            // NOTE: This requires `sensor_name` to be a proper TOML key.
+            if (sensor_name != "") out << "[" << sensor_name << "]\\n";
+            out << "field_names = [\\n";
+          }}
         ''' f'''{base_call}
+        // NOTE: This code could make use of more abstraction and less
+        // reinventing the wheel, but I don't care, for now…
         auto const field_names_buffer{{field_names(data)}};
-        for (auto const &field_name : field_names_buffer) {{
-          out << "\\"" << sensor_name << field_name << "\\"";
-          if (inner or &field_name != &field_names_buffer.back())
-            out << cc::csv_delimiter_string;
+        if (wf == WriteFormat::csv) {{
+          if (sensor_name != "") sensor_name += "_";
+          for (auto const &field_name : field_names_buffer) {{
+            out << "\\"" << sensor_name << field_name << "\\"";
+            if (inner or &field_name != &field_names_buffer.back())
+              out << cc::csv_delimiter_string;
+          }}
+        }} else if (wf == WriteFormat::toml) {{
+          for (auto const &field_name : field_names_buffer) {{
+            io::toml::indent(out) << "\\"" << field_name << "\\"";
+            if (inner or &field_name != &field_names_buffer.back())
+            out << ",\\n"; else out << "]\\n";
+          }}
         }}
         if (inner) return out; else {{
           out.precision(original_precision);
@@ -318,18 +361,16 @@ def snippet_write_csv_field_names():
         }}
       }}''')
 
-  template = f''
   t = f'sensor'
   base_call = f''
-  str = snippet(template, t, base_call) + f'\n\n'
+  str = snippet(t, base_call) + f'\n\n'
 
-  template = indent(f'template<class T>\n', 3)
-  t = f'T'
+  t = f'auto'
   base_call = indent(textwrap.dedent(f'''
-    write_csv_field_names(out, static_cast<sensor>(data),
+    write_field_names(out, static_cast<sensor>(data), wf,
       std::optional<std::string>(sensor_name), true);
     '''), 4)
-  str += snippet(template, t, base_call)
+  str += snippet(t, base_call)
   return str
 
 def sensors_include(sensors):
@@ -365,12 +406,12 @@ def sensors_include(sensors):
   for snippet in [snippet_struct, snippet_sensor_state, snippet_init_state,
       snippet_setup_io, snippet_sample, snippet_aggregation_step,
       snippet_aggregation_finish, snippet_name, snippet_field_names,
-      snippet_write_csv_fields]:
+      snippet_write_fields]:
     str += indent(snippet("sensor", base_sensor_params) + sep)
     for sensor_name, sensor_params in sensors.items():
       str += indent(snippet(sensor_name, sensor_params) + sep)
 
-  str += indent(snippet_write_csv_field_names() + sep)
+  str += indent(snippet_write_field_names() + sep)
 
   return str + f'}} // namespace sensors\n'
 

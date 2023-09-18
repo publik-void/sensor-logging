@@ -20,7 +20,7 @@ namespace io::toml {
       x{x}, comment{comment}, i{y.i}, cond{false} {}
   };
 
-  std::ostream& indent(std::ostream &out, indent_t const &i,
+  std::ostream& indent(std::ostream &out, indent_t const &i = shiftwidth,
       bool const cond = true) {
     if (cond) for (indent_t j{0}; j < i; ++j) out << ' ';
     return out;
@@ -118,11 +118,30 @@ namespace io::toml {
       std::put_time(gmtime, "%Y-%m-%d %H:%M:%SZ"), x);
   }
 
+  template <class Rep, std::intmax_t Num, std::intmax_t Denom>
+  std::ostream& operator<<(std::ostream& out, TOMLWrapper<
+      std::chrono::duration<Rep, std::ratio<Num, Denom>>> const &x) {
+    return print_comment(indent(out, x) << io::csv::CSVWrapper<
+      std::chrono::duration<Rep, std::ratio<Num, Denom>>>{x.x}, x);
+  }
+
   template <typename K, typename V>
   std::ostream& operator<<(std::ostream& out,
       TOMLWrapper<std::pair<K, V>> const x) {
-    return print_key(indent(out, x), x.x.first) << " = "
-      << TOMLWrapper{x.x.second, x, x.comment} << "\n";
+    auto const original_width{out.width(0)};
+    print_key(indent(out, x), x.x.first) << " = ";
+    out.width(original_width);
+    return out << TOMLWrapper{x.x.second, x, x.comment} << "\n";
+  }
+
+  template <typename K, typename V>
+  std::ostream& operator<<(std::ostream& out,
+      TOMLWrapper<std::pair<K, std::optional<V>>> const x) {
+    if (x.x.second.has_value()) {
+      out << TOMLWrapper{std::make_pair(x.x.first, x.x.second.value()),
+        x.comment, x.i, x.cond};
+    }
+    return out;
   }
 
 }

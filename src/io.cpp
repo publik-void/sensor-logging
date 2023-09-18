@@ -326,7 +326,7 @@ auto lpd433_oneshot_send(auto const &pi, int const gpio_index,
 
   auto const t{
     std::chrono::duration_cast<std::chrono::milliseconds>(toc - tic).count()};
-  if constexpr (cc::log_errors) std::cerr << log_info_prefix
+  if constexpr (cc::log_info) std::cerr << log_info_prefix
     << "Sending " << codes.size() << " LPD433 code(s) with " << n_bits
     << " bit(s), " << n_repeats << " repetition(s), and timings (gap, short, "
     "long) of " << intercode_gap << "µs, " << pulse_length_short << "µs, and "

@@ -185,25 +185,37 @@ def indent(str, shifts):
   return textwrap.indent(str, indent_str(shifts))
 
 # (Very) basic TOML serialization helper
-def as_toml(x, shifts = 0, contd = False):
+def as_toml(x, shifts = 0, comment = None, contd = False):
+  commented = lambda s: " # " + s if bool(s) else ""
   if isinstance(x, dict):
+    _as_toml = lambda k, v: as_toml(v, shifts,
+        comment[k] if isinstance(comment, dict) else None, True)
     # NOTE: Unsafe, because it never quotes keys
-    str = "".join([f"{k} = {as_toml(v, shifts, True)}\n"
-      for k, v in x.items()])
+    s = "".join([f"{k} = {_as_toml(k, v)}\n" for k, v in x.items()])
   elif isinstance(x, list):
-    str = "[\n" if bool(x) else "["
-    str += ",\n".join([as_toml(v, 1) for v in x])
-    str += "]"
+    s = "["
+    if bool(x):
+      if isinstance(comment, str):
+        s += commented(comment)
+      s += "\n"
+    s = "[\n" if bool(x) else "["
+    s += "".join([as_toml(v, 1, None) + "," +
+      ((commented(comment)) if isinstance(comment, list) and i < len(comment)
+        else "") + "\n"
+      for (i, v) in enumerate(x)])
+    s += "]"
+    if not bool(x) and isinstance(comment, str):
+      s += commented(comment)
   elif isinstance(x, time.struct_time):
     # NOTE: Assumes UTC time
-    str = time.strftime("%Y-%m-%d %H:%M:%SZ", x)
+    s = time.strftime("%Y-%m-%d %H:%M:%SZ", x) + commented(comment)
   elif isinstance(x, datetime.date):
-    str = x.isoformat()
+    s = x.isoformat() + commented(comment)
   elif isinstance(x, numbers.Number):
-    str = f"{x}"
+    s = f"{x}" + commented(comment)
   else:
-    str = repr(x).replace('"', '\\"').replace("'", "\"")
-  return str if contd else indent(str, shifts)
+    s = repr(x).replace('"', '\\"').replace("'", "\"") + commented(comment)
+  return s if contd else indent(s, shifts)
 
 # Convenience constants
 error_prefix = f"{sys.argv[0]}: ERROR:"
@@ -421,7 +433,8 @@ def daily(p, f = None, time_point_startup = time.gmtime(), pathss = None,
 
   time_point_finish = time.gmtime()
   f.write("\n"
-    f"[{log_identifier}] # Log finished with this section\n" +
-    as_toml({"time_point_finish": time_point_finish}))
+    f"[{log_identifier}]\n" +
+    as_toml({"time_point_finish": time_point_finish}, 0,
+      {"time_point_finish": "Log finished here"}))
 
 daily(config)

@@ -3,5 +3,4 @@ __pycache__
 /build
 /data
 /logs
-/src/*.generated.cpp
 
