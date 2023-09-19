@@ -3,9 +3,10 @@ namespace control {
   // constraints. See e.g. `https://stackoverflow.com/a/523933`. Furthermore,
   // the produced data is not cross-platform, but it is not supposed to anyway.
 
-  void serialize(auto const &obj, std::filesystem::path const &path_file) {
+  auto serialize(auto const &obj, std::filesystem::path const &path_file) {
     std::ofstream f{path_file, std::ios::out | std::ios::binary};
     f.write(&obj, sizeof(obj));
+    return obj;
   }
 
   auto deserialize(auto &obj, std::filesystem::path const &path_file) {
@@ -134,7 +135,7 @@ namespace control {
 
     auto const set_ventilation{[&](bool const to){
       // TODO: Adjust the values here
-      io::lpd433_oneshot_send(pi, cc::lpd433_transmitter_gpio_index.value(),
+      io::lpd433_send_oneshot(pi, cc::lpd433_transmitter_gpio_index.value(),
         {to ? 4474193u : 4474196u}, 24, 20, 9950, 300, 900);
       succ.ventilation = to;
     }};

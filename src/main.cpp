@@ -25,6 +25,7 @@
 #include <mutex>
 #include <condition_variable>
 #include <thread>
+#include <future>
 #include <ctime>
 #include <chrono>
 #include <ratio>
@@ -93,11 +94,25 @@ namespace cc {
 
   std::chrono::milliseconds constexpr wait_interval_min{100};
 
+  int constexpr lpd433_receive_n_bits_min_default{8};
+  int constexpr lpd433_receive_n_bits_max_default{32};
+  int constexpr lpd433_receive_glitch_default{150};
+
+  int constexpr lpd433_send_n_bits_default{24};
+  int constexpr lpd433_send_n_repeats_default{6};
+  int constexpr lpd433_send_intercode_gap_default{9000};
+  int constexpr lpd433_send_pulse_length_short_default{300};
+  int constexpr lpd433_send_pulse_length_long_default{900};
+
+  float constexpr buzz_t_seconds_default{.08f};
+  float constexpr buzz_f_hertz_default{1000.f};
+  float constexpr buzz_pulse_width_default{.1f};
+
   std::string_view constexpr basename_dir_data{"data"};
   std::string_view constexpr basename_dir_shortly{"shortly"};
   std::string_view constexpr basename_file_control_state{".control_state"};
   std::string_view constexpr basename_file_control_params{".control_params"};
-} // namespace cc
+}
 
 std::string log_info_prefix;
 std::string log_error_prefix;
@@ -114,6 +129,7 @@ enum struct MainMode {
   print_config,
   lpd433_listen,
   lpd433_oneshot,
+  buzz_oneshot,
   shortly,
   daily};
 std::string main_mode_name(MainMode const &mode) {
@@ -122,6 +138,7 @@ std::string main_mode_name(MainMode const &mode) {
   if (mode == MainMode::print_config  ) return "print-config";
   if (mode == MainMode::lpd433_listen ) return "lpd433-listen";
   if (mode == MainMode::lpd433_oneshot) return "lpd433-oneshot";
+  if (mode == MainMode::buzz_oneshot  ) return "buzz-oneshot";
   if (mode == MainMode::shortly       ) return "shortly";
   if (mode == MainMode::daily         ) return "daily";
   return "";
@@ -138,6 +155,7 @@ namespace cc {
       {MainMode::print_config  , sensors::WriteFormat::toml},
       {MainMode::lpd433_listen , sensors::WriteFormat::csv },
       {MainMode::lpd433_oneshot, sensors::WriteFormat::csv },
+      {MainMode::buzz_oneshot  , sensors::WriteFormat::csv },
       {MainMode::shortly       , sensors::WriteFormat::csv },
       {MainMode::daily         , sensors::WriteFormat::csv }};
 
@@ -155,7 +173,8 @@ namespace cc {
     std::make_tuple(4, DHTXX))};
   std::optional<int> constexpr
     lpd433_receiver_gpio_index_lasse_raspberrypi_0{27},
-    lpd433_transmitter_gpio_index_lasse_raspberrypi_0{17};
+    lpd433_transmitter_gpio_index_lasse_raspberrypi_0{17},
+    buzzer_gpio_index_lasse_raspberrypi_0{26};
 
   using sensors_tuple_t_lasse_raspberrypi_1 = std::tuple<
     >;
@@ -165,7 +184,8 @@ namespace cc {
     )};
   std::optional<int> constexpr
     lpd433_receiver_gpio_index_lasse_raspberrypi_1{},
-    lpd433_transmitter_gpio_index_lasse_raspberrypi_1{};
+    lpd433_transmitter_gpio_index_lasse_raspberrypi_1{},
+    buzzer_gpio_index_lasse_raspberrypi_1{};
 
   //
 
@@ -208,7 +228,10 @@ namespace cc {
       : lpd433_receiver_gpio_index_lasse_raspberrypi_1},
     lpd433_transmitter_gpio_index{host == Host::lasse_raspberrypi_0
       ? lpd433_transmitter_gpio_index_lasse_raspberrypi_0
-      : lpd433_transmitter_gpio_index_lasse_raspberrypi_1};
+      : lpd433_transmitter_gpio_index_lasse_raspberrypi_1},
+    buzzer_gpio_index{host == Host::lasse_raspberrypi_0
+      ? buzzer_gpio_index_lasse_raspberrypi_0
+      : buzzer_gpio_index_lasse_raspberrypi_1};
 
 }
 
@@ -355,30 +378,35 @@ int main(int const argc, char const * const argv[]) {
         "    Print this usage message.\n"
         "\n"
         "  print-config\n"
-        "    Print a non-exhaustive configuration, including compile-time "
-            "constants and\n"
-        "    some other parameters.\n"
+        "    Print a non-exhaustive configuration report, including "
+            "compile-time\n"
+        "    constants, defaults for the command-line options where "
+            "applicable, as well\n"
+        "    as some other parameters.\n"
         "\n"
-        "  lpd433-listen [--n-bits-min=<n> --n-bits-max=<m> "
-          "--glitch=<t>]\n"
+        "  lpd433-listen [--n-bits-min=<n>] [--n-bits-max=<m>] "
+          "[--glitch=<t>]\n"
         "    Listen for 433MHz RF transmissions and log to stdout in CSV "
             "format.\n"
         "\n"
-        "    Codes with less than `n` (default 8) or more than `m` (default "
-            "32) bits as\n"
-        "    well as bit steps shorter than `t` (default 150) µs are ignored.\n"
+        "    Codes with less than <n> or more than <m> bits as well as bit "
+            "steps shorter\n"
+        "    than <t> µs are ignored.\n"
         "\n"
-        "  lpd433-oneshot [--n-bits=<n> --n-repeats=<m> --intercode-gap=<t>\n"
-        "  --pulse-length-short=<u> --pulse-length-long=<v>] codes...\n"
+        "  lpd433-oneshot [--n-bits=<n>] [--n-repeats=<m>] "
+          "[--intercode-gap=<t>] \\\n"
+        "  [--pulse-length-short=<u>] [--pulse-length-long=<v>] codes...\n"
         "    Send `codes` as 433MHz RF transmissions.\n"
         "\n"
-        "    Transmitted codes will have a length of `n` (default 24) bits, be "
-            "repeated\n"
-        "    `m` (default 6) times, with an intercode gap of `t` (default "
-            "9000) µs, a\n"
-        "    short pulse length of `u` (default 300) µs, and a long pulse "
-            "length of `v`\n"
-        "    (default 900) µs.\n"
+        "    Transmitted codes will have a length of <n> bits, be repeated <m> "
+            "times,\n"
+        "    with an intercode gap of <t> µs, a short pulse length of <u> µs, "
+            "and a long\n"
+        "    pulse length of <v> µs.\n"
+        "\n"
+        "  buzz-oneshot [--time=<t in seconds>] [--frequency=<f in hertz>] \\\n"
+        "  [--pulse-width=<pulse width>]\n"
+        "    Play a single beep on the buzzer.\n"
         "\n"
         "  shortly [--now]\n"
         "    The main mode which samples sensors at periodic time points and "
@@ -451,30 +479,23 @@ int main(int const argc, char const * const argv[]) {
         << io::toml::TOMLWrapper{std::make_pair("time_point_next_shortly_run",
             time_point_next_shortly_run)}
         << "\n"
-        << io::toml::TOMLWrapper{std::make_pair("sampling_interval_in_seconds",
-            sampling_interval_in_seconds)}
+        << io::toml::TOMLWrapper{std::make_pair("sampling_interval",
+            sampling_interval_in_seconds), "s"}
         << io::toml::TOMLWrapper{std::make_pair("samples_per_aggregate",
             static_cast<signed>(cc::samples_per_aggregate))}
         << io::toml::TOMLWrapper{std::make_pair("aggregates_per_run",
             static_cast<signed>(cc::aggregates_per_run))}
-        << io::toml::TOMLWrapper{std::make_pair("run_duration_in_minutes",
+        << io::toml::TOMLWrapper{std::make_pair("run_duration",
             static_cast<signed>(run_duration_in_minutes)),
-            "from the above 3 parameters"}
-        << "\n"
-        << io::toml::TOMLWrapper{std::make_pair("sensors", util::map_constexpr(
-            [](auto const &s){ return sensors::name(s); }, cc::blueprint))}
-        << io::toml::TOMLWrapper{std::make_pair(
-            "sensors_physical_instance_names",
-            cc::sensors_physical_instance_names)}
-        << io::toml::TOMLWrapper{std::make_pair("sensors_io_setup_args",
-            cc::sensors_io_setup_args)}
+            "min (calculated from the above 3 parameters)"}
         << "\n"
         << io::toml::TOMLWrapper{std::make_pair("period_system_clock",
           static_cast<double>(std::chrono::system_clock::period::num) /
-          static_cast<double>(std::chrono::system_clock::period::den))}
+          static_cast<double>(std::chrono::system_clock::period::den)), "s"}
         << io::toml::TOMLWrapper{std::make_pair("period_high_resolution_clock",
           static_cast<double>(std::chrono::high_resolution_clock::period::num) /
-          static_cast<double>(std::chrono::high_resolution_clock::period::den))}
+          static_cast<double>(std::chrono::high_resolution_clock::period::den)),
+          "s"}
         << "\n"
         << io::toml::TOMLWrapper{std::make_pair("digits_float",
           std::numeric_limits<float>::digits)}
@@ -483,10 +504,58 @@ int main(int const argc, char const * const argv[]) {
         << io::toml::TOMLWrapper{std::make_pair("digits_long_double",
           std::numeric_limits<long double>::digits)}
         << "\n"
-        << "[format_defaults]\n";
-        for (auto const& [k, v] : cc::write_format_defaults)
+        << "[defaults.lpd433.receive]\n"
+        << io::toml::TOMLWrapper{std::make_pair("n_bits_min",
+          cc::lpd433_receive_n_bits_min_default)}
+        << io::toml::TOMLWrapper{std::make_pair("n_bits_max",
+          cc::lpd433_receive_n_bits_max_default)}
+        << io::toml::TOMLWrapper{std::make_pair("glitch",
+          cc::lpd433_receive_glitch_default), "µs"}
+        << "\n"
+        << "[defaults.lpd433.send]\n"
+        << io::toml::TOMLWrapper{std::make_pair("n_bits",
+          cc::lpd433_send_n_bits_default)}
+        << io::toml::TOMLWrapper{std::make_pair("n_repeats",
+          cc::lpd433_send_n_repeats_default)}
+        << io::toml::TOMLWrapper{std::make_pair("intercode_gap",
+          cc::lpd433_send_intercode_gap_default), "µs"}
+        << io::toml::TOMLWrapper{std::make_pair("pulse_length_short",
+          cc::lpd433_send_pulse_length_short_default), "µs"}
+        << io::toml::TOMLWrapper{std::make_pair("pulse_length_long",
+          cc::lpd433_send_pulse_length_long_default), "µs"}
+        << "\n"
+        << "[defaults.buzzer]\n"
+        << io::toml::TOMLWrapper{std::make_pair("time",
+          cc::buzz_t_seconds_default), "s"}
+        << io::toml::TOMLWrapper{std::make_pair("frequency",
+          cc::buzz_f_hertz_default), "Hz"}
+        << io::toml::TOMLWrapper{std::make_pair("pulse_width",
+          cc::buzz_pulse_width_default)}
+        << "\n"
+        << "[defaults.format]\n";
+        for (auto const &[k, v] : cc::write_format_defaults)
           out << io::toml::TOMLWrapper{std::make_pair(main_mode_name(k),
             sensors::write_format_ext(v))};
+        util::for_constexpr([](auto const &sensor, auto const &name,
+            auto const &args){
+          out << "\n[sensors." << name << "]\n"
+            << io::toml::TOMLWrapper{std::make_pair("type",
+              sensors::name(sensor))}
+            << io::toml::TOMLWrapper{std::make_pair("io_setup_args",
+              args)};
+          }, cc::blueprint, cc::sensors_physical_instance_names,
+          cc::sensors_io_setup_args);
+        util::for_constexpr([](auto const &gpio_index_opt, auto const &type){
+            if (gpio_index_opt.has_value()) {
+              out << "\n[aux_devices." << type << "]\n"
+                << io::toml::TOMLWrapper{std::make_pair("gpio_index",
+                  gpio_index_opt.value())};
+            }
+          }, std::make_tuple(
+            cc::lpd433_receiver_gpio_index,
+            cc::lpd433_transmitter_gpio_index,
+            cc::buzzer_gpio_index),
+          std::make_tuple("lpd433_receiver", "lpd433_transmitter", "buzzer"));
         out << std::flush;
       }
   } else if (main_mode == MainMode::lpd433_listen) {
@@ -501,10 +570,12 @@ int main(int const argc, char const * const argv[]) {
     arg_itr = util::get_cmd_args(flags, opts, arg_itr, args.end());
     auto const parser{+[](std::string const &s){
       return std::stoi(s, nullptr, 0); }};
-    auto const n_bits_min{util::parse_arg_value(parser, opts, "n-bits-min", 8)};
-    auto const n_bits_max{
-      util::parse_arg_value(parser, opts, "n-bits-max", 32)};
-    auto const glitch{util::parse_arg_value(parser, opts, "glitch", 150)};
+    auto const n_bits_min{util::parse_arg_value(parser, opts, "n-bits-min",
+      cc::lpd433_receive_n_bits_min_default)};
+    auto const n_bits_max{util::parse_arg_value(parser, opts, "n-bits-max",
+      cc::lpd433_receive_n_bits_max_default)};
+    auto const glitch{util::parse_arg_value(parser, opts, "glitch",
+      cc::lpd433_receive_glitch_default)};
 
     _433D_rx_CB_t const callback{
       // TODO: This is ugly, because the lambda(s) may not capture
@@ -550,14 +621,16 @@ int main(int const argc, char const * const argv[]) {
     arg_itr = util::get_cmd_args(flags, opts, arg_itr, args.end());
     auto const parser{+[](std::string const &s){
       return std::stoi(s, nullptr, 0); }};
-    auto const n_bits{util::parse_arg_value(parser, opts, "n-bits", 24)};
-    auto const n_repeats{util::parse_arg_value(parser, opts, "n-repeats", 6)};
-    auto const intercode_gap{
-      util::parse_arg_value(parser, opts, "intercode-gap", 9000)};
-    auto const pulse_length_short{
-      util::parse_arg_value(parser, opts, "pulse-length-short", 300)};
-    auto const pulse_length_long{
-      util::parse_arg_value(parser, opts, "pulse-length-long", 900)};
+    auto const n_bits{util::parse_arg_value(parser, opts, "n-bits",
+      cc::lpd433_send_n_bits_default)};
+    auto const n_repeats{util::parse_arg_value(parser, opts, "n-repeats",
+      cc::lpd433_send_n_repeats_default)};
+    auto const intercode_gap{util::parse_arg_value(parser, opts,
+      "intercode-gap", cc::lpd433_send_intercode_gap_default)};
+    auto const pulse_length_short{util::parse_arg_value(parser, opts,
+      "pulse-length-short", cc::lpd433_send_pulse_length_short_default)};
+    auto const pulse_length_long{util::parse_arg_value(parser, opts,
+      "pulse-length-long", cc::lpd433_send_pulse_length_long_default)};
 
     std::vector<std::uint64_t> codes{};
     while (arg_itr < args.end()) {
@@ -575,9 +648,33 @@ int main(int const argc, char const * const argv[]) {
     io::Pi const pi{};
     if (io::errored(pi)) return cc::exit_code_error;
 
-    io::lpd433_oneshot_send(pi, cc::lpd433_transmitter_gpio_index.value(),
+    io::lpd433_send_oneshot(pi, cc::lpd433_transmitter_gpio_index.value(),
       codes, n_bits, n_repeats, intercode_gap, pulse_length_short,
       pulse_length_long);
+  } else if (main_mode == MainMode::buzz_oneshot) {
+    if (not cc::buzzer_gpio_index.has_value()) {
+      if constexpr (cc::log_errors) std::cerr << log_error_prefix
+        << "No buzzer configured in the present binary." << std::endl;
+      return cc::exit_code_error;
+    }
+
+    flags_t flags{};
+    opts_t opts{{"time", {}}, {"frequency", {}}, {"pulse-width", {}}};
+    arg_itr = util::get_cmd_args(flags, opts, arg_itr, args.end());
+    auto const parser{+[](std::string const &s){
+      return std::stof(s, nullptr); }};
+    auto const t_seconds{util::parse_arg_value(parser, opts, "time",
+      cc::buzz_t_seconds_default)};
+    auto const f_hertz{util::parse_arg_value(parser, opts, "frequency",
+      cc::buzz_f_hertz_default)};
+    auto const pulse_width{util::parse_arg_value(parser, opts, "pulse-width",
+      cc::buzz_pulse_width_default)};
+
+    io::Pi const pi{};
+    if (io::errored(pi)) return cc::exit_code_error;
+
+    buzz_oneshot(pi, cc::buzzer_gpio_index.value(), t_seconds, f_hertz,
+      pulse_width);
   } else if (main_mode == MainMode::shortly) {
     flags_t flags{{"now", false}};
     opts_t opts{};
@@ -741,10 +838,14 @@ int main(int const argc, char const * const argv[]) {
 
         if (quit_early) { close_files(); return cc::exit_code_interrupt; }
 
-        auto const xs{util::map_constexpr(
+        // NOTE: Turns out `std::future::get` is not marked const.
+        auto /*const*/ x_futures{util::map_constexpr(
           [&](auto const &s, auto const &sensor_io){
-            return sample(s, clock, sensor_io);
+            return std::async(std::launch::async, [&](){
+              return sensors::sample(s, clock, sensor_io); });
           }, cc::blueprint, sensor_ios)};
+        auto const xs{util::map_constexpr(
+          [&](auto /*const*/ &x_future){ return x_future.get(); }, x_futures)};
 
         std::tie(aggregate, state) = util::tr(util::map_constexpr([](
               auto const& a, auto const &s, auto const &x){

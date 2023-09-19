@@ -309,12 +309,11 @@ std::optional<std::array<std::uint8_t, 8>> mhz19_receive(
   return {packet};
 }
 
-auto lpd433_oneshot_send(auto const &pi, int const gpio_index,
+auto lpd433_send_oneshot(auto const &pi, int const gpio_index,
     std::vector<std::uint64_t> const &codes, int const n_bits,
     int const n_repeats, int const intercode_gap, int const pulse_length_short,
-    int const pulse_length_long,
-    std::chrono::high_resolution_clock const &clock = {}) {
-  auto tic{clock.now()}; {
+    int const pulse_length_long, bool const wait = true) {
+  auto const lpd433_send_oneshotter_body{[&](){
     io::LPD433Transmitter const lpd433_transmitter{pi, gpio_index};
     _433D_tx_set_bits(lpd433_transmitter, n_bits);
     _433D_tx_set_repeats(lpd433_transmitter, n_repeats);
@@ -322,15 +321,78 @@ auto lpd433_oneshot_send(auto const &pi, int const gpio_index,
       pulse_length_short, pulse_length_long);
     for (auto const &code : codes)
       _433D_tx_send(lpd433_transmitter, code);
-  } auto toc{clock.now()};
+  }};
 
-  auto const t{
-    std::chrono::duration_cast<std::chrono::milliseconds>(toc - tic).count()};
-  if constexpr (cc::log_info) std::cerr << log_info_prefix
-    << "Sending " << codes.size() << " LPD433 code(s) with " << n_bits
-    << " bit(s), " << n_repeats << " repetition(s), and timings (gap, short, "
-    "long) of " << intercode_gap << "µs, " << pulse_length_short << "µs, and "
-    << pulse_length_long << "µs took " << t << "ms." << std::endl;
+  auto const lpd433_send_oneshotter{[&](){
+    if constexpr (cc::log_info) {
+    std::chrono::high_resolution_clock const clock{};
+    auto tic{clock.now()};
+    lpd433_send_oneshotter_body();
+    auto toc{clock.now()};
+    auto const t{
+      std::chrono::duration_cast<std::chrono::milliseconds>(toc - tic).count()};
+    std::cerr << log_info_prefix << "Sending " << codes.size()
+      << " LPD433 code(s) with " << n_bits << " bit(s), " << n_repeats
+      << " repetition(s), and timings (gap, short, " "long) of "
+      << intercode_gap << "µs, " << pulse_length_short << "µs, and "
+      << pulse_length_long << "µs took " << t << "ms." << std::endl;
+    } else lpd433_send_oneshotter_body();
+  }};
+
+  std::thread t{lpd433_send_oneshotter};
+  if (wait) t.join();
+  return t;
+}
+
+std::thread buzz_oneshot(auto const &pi, int const gpio_index,
+    float const t_seconds = cc::buzz_t_seconds_default,
+    float const f_hertz = cc::buzz_f_hertz_default,
+    float const pulse_width = cc::buzz_pulse_width_default,
+    bool const wait = true) {
+  unsigned range{40000u}, frequency{static_cast<unsigned>(f_hertz)};
+  unsigned dutycycle{
+    static_cast<unsigned>(pulse_width * static_cast<float>(range))};
+  std::chrono::duration<float> duration{t_seconds};
+
+  auto const buzz_oneshotter{[&](){
+    int response;
+
+    response = set_PWM_range(pi, gpio_index, range);
+    if (response < 0) {
+      if (cc::log_errors) std::cerr << log_error_prefix
+        << "setting PWM range: "
+        << pigpio_error(response) << std::endl;
+      return;
+    }
+
+    response = set_PWM_frequency(pi, gpio_index, frequency);
+    if (response < 0) {
+      if (cc::log_errors) std::cerr << log_error_prefix
+        << "setting PWM frequency: "
+        << pigpio_error(response) << std::endl;
+      return;
+    }
+
+    response = set_PWM_dutycycle(pi, gpio_index, dutycycle);
+    if (response < 0) {
+      if (cc::log_errors) std::cerr << log_error_prefix
+        << "starting PWM: "
+        << pigpio_error(response) << std::endl;
+      return;
+    }
+
+    std::this_thread::sleep_for(duration);
+
+    response = set_PWM_dutycycle(pi, gpio_index, 0u);
+    if (response < 0) {
+      if (cc::log_errors) std::cerr << log_error_prefix
+        << "stopping PWM: "
+        << pigpio_error(response) << std::endl;
+      return;
+    }
+  }};
+  std::thread t{buzz_oneshotter};
+  if (wait) t.join();
   return t;
 }
 
