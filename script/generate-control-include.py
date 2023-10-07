@@ -1,6 +1,8 @@
 import os
 import json
 import textwrap
+import hashlib
+import base64
 
 def indent(str, n = 1, predicate = None):
   return textwrap.indent(str, "  " * n, predicate)
@@ -11,7 +13,15 @@ def snippet_struct_declaration(host_identifier, struct_fields, type_identifier):
   for field in struct_fields:
     initializer = f'{{{field["default"]}}}' if "default" in field else ""
     str += indent(f'{field["type"]} {field["name"]}{initializer};\n')
-  return str + f'}};\n'
+  str += f'}};\n'
+
+  definition_hash = base64.urlsafe_b64encode(
+    hashlib.shake_128(str.encode("utf-8")).digest(12)).decode()
+  str += f'\n'
+  str += (f'std::string_view constexpr hash_struct_control_'
+    f'{type_identifier}_{host_identifier}{{\n')
+  str += indent(f'"{definition_hash}"}};\n')
+  return str
 
 # def snippet_struct_field_names(host_identifier, struct_fields, type_identifier):
 #   str = f'std::array<std::string, {len(struct_fields)}> field_names(\n'
@@ -35,6 +45,214 @@ def snippet_as_sensor(host_identifier, struct_fields, type_identifier):
   str += indent(f'}};\n')
   return str + f'}}\n'
 
+def snippet_enum_lpd433_control_variable(host_identifier, host_structs):
+  str = f'enum struct lpd433_control_variable_{host_identifier} {{\n'
+  for field in host_structs["struct_state"]:
+    if "lpd433" in field:
+      str += indent(f'{field["name"]},\n')
+  return str + f'}};\n'
+
+def snippet_lpd433_control_variable_name(host_identifier, host_structs):
+  maybe_unused_str = ("" if
+    any("lpd433" in field for field in host_structs["struct_state"]) else
+    "[[maybe_unused]] ")
+
+  str = (f'std::string name({maybe_unused_str}lpd433_control_variable_'
+    f'{host_identifier} const var) {{\n')
+  for field in host_structs["struct_state"]:
+    if "lpd433" in field:
+      str += indent(f'if (var == lpd433_control_variable_{host_identifier}::'
+        f'{field["name"]})\n')
+      str += indent(f'return {{"{field["name"]}"}};\n', 2)
+  str += indent(f'return {{""}};\n')
+  return str + f'}}\n'
+
+def snippet_lpd433_control_variable_parse_per_host(host_identifier, host_structs):
+  maybe_unused_str = ("" if
+    any("lpd433" in field for field in host_structs["struct_state"]) else
+    "[[maybe_unused]] ")
+
+  str = (f'std::optional<lpd433_control_variable_{host_identifier}>\n')
+  str += indent(f'lpd433_control_variable_parse_{host_identifier}(\n'
+    f'{maybe_unused_str}auto const &name) {{\n', 2)
+  for field in host_structs["struct_state"]:
+    if "lpd433" in field:
+      str += indent(f'if (name == "{field["name"]}")\n')
+      str += indent(f'return lpd433_control_variable_{host_identifier}::'
+        f'{field["name"]};\n', 2)
+  str += indent(f'if constexpr (cc::log_errors) std::cerr << '
+    f'log_error_prefix\n')
+  str += indent(f'<< "unrecognized control variable \\"" << name << "\\"." '
+    f'<< std::endl;\n', 2)
+  str += indent(f'return {{}};\n')
+  return str + f'}}\n'
+
+def snippet_update_from_lpd433(host_identifier, host_structs):
+  has_ignore_time = (
+    any(param["name"] == "lpd433_ignore_time"
+      for param in host_structs["struct_params"]) and
+    any(state["name"] == "lpd433_ignore_time_counter"
+      for state in host_structs["struct_state"]))
+  maybe_unused_str = "" if has_ignore_time else "[[maybe_unused]] "
+  str = (f'std::optional<std::pair<lpd433_control_variable_{host_identifier}, '
+    f'bool>>\n')
+  str += indent(
+    f'update_from_lpd433(auto const &pi,\n'
+    f'std::optional<io::LPD433Receiver> const &lpd433_receiver_opt,\n'
+    f'{maybe_unused_str}control_state_{host_identifier} &state,\n'
+    f'{maybe_unused_str}auto const &sampling_interval) {{\n', 2)
+  str += indent(textwrap.dedent(f'''\
+    if (not lpd433_receiver_opt.has_value()) return {{}};
+
+    auto const &lpd433_receiver{{lpd433_receiver_opt.value()}};
+    bool const lpd433_receiver_ready{{_433D_rx_ready(lpd433_receiver) != 0}};
+
+    '''))
+  if has_ignore_time:
+    str += indent(textwrap.dedent(f'''\
+      decltype(state.lpd433_ignore_time_counter) const zero{{0}};
+      state.lpd433_ignore_time_counter -= sampling_interval;
+      if (state.lpd433_ignore_time_counter <= zero) {{
+        state.lpd433_ignore_time_counter = zero;
+      '''))
+  else:
+    str += f'\n'
+  str += indent(textwrap.dedent(f'''\
+    if (lpd433_receiver_ready) {{
+      bool recognized{{true}};
+      auto buzz_t_seconds{{cc::buzz_t_seconds_default}};
+      auto buzz_f_hertz{{cc::buzz_f_hertz_default}};
+      auto buzz_pulse_width{{cc::buzz_pulse_width_default}};
+      _433D_rx_data_t data;
+      _433D_rx_data(lpd433_receiver, &data);
+      lpd433_control_variable_{host_identifier} var;
+      bool to;
+
+    '''), 1 + has_ignore_time)
+
+  if_branches_present = False
+  is_first_entry = True
+  def buzz_customizations(field):
+    return f''.join(indent(f'buzz_{arg} = {field["lpd433"][f"buzz_{arg}"]};\n',
+        3 + has_ignore_time)
+      for arg in ["t_seconds", "f_hertz", "pulse_width"]
+      if f'buzz_{arg}' in field["lpd433"])
+  for field in host_structs["struct_state"]:
+    if "lpd433" in field:
+      str += indent(f'{" else " if not is_first_entry else ""}if (data.code =='
+        f' {field["lpd433"]["code_off"]}u) {{\n',
+          (2 + has_ignore_time) if is_first_entry else 0)
+      str += indent(f'var = lpd433_control_variable_{host_identifier}::'
+        f'{field["name"]};\n', 3 + has_ignore_time)
+      str += indent(f'to = false;\n', 3 + has_ignore_time)
+      str += indent(f'state.{field["name"]} = false;\n', 3 + has_ignore_time)
+      str += buzz_customizations(field)
+      str += indent(f'}} else if (data.code == {field["lpd433"]["code_on"]}u) '
+        f'{{\n', 2 + has_ignore_time)
+      str += indent(f'var = lpd433_control_variable_{host_identifier}::'
+        f'{field["name"]};\n', 3 + has_ignore_time)
+      str += indent(f'to = true;\n', 3 + has_ignore_time)
+      str += indent(f'state.{field["name"]} = true;\n', 3 + has_ignore_time)
+      str += buzz_customizations(field)
+      str += indent(f'}}', 2 + has_ignore_time)
+      is_first_entry = False
+      if_branches_present = True
+  str += indent(f'{" else " if if_branches_present else ""}recognized = false;'
+    f'\n',
+    (2 + has_ignore_time) if not if_branches_present else 0)
+  str += indent(textwrap.dedent(f'''
+        if (recognized) {{
+          if constexpr (cc::buzzer_gpio_index.has_value())
+            io::buzz_oneshot(pi, cc::buzzer_gpio_index.value(),
+              buzz_t_seconds, buzz_f_hertz, buzz_pulse_width);
+          if constexpr (cc::log_info) std::cerr << log_info_prefix
+            << "recognized external LPD433 command: " << name(var) << " "
+            << (to ? "on" : "off") << "." << std::endl;
+          return {{{{var, to}}}};
+        }}
+      }}
+      '''), has_ignore_time + 1)
+  if has_ignore_time:
+    str += indent(f'}}\n')
+  str += indent(textwrap.dedent(f'''\
+      return {{}};
+    }}
+    '''), 0)
+  return str
+
+def snippet_set_lpd433_control_variable_per_host(host_identifier, host_structs):
+  str = f''
+  has_ignore_time = (
+    any(param["name"] == "lpd433_ignore_time"
+      for param in host_structs["struct_params"]) and
+    any(state["name"] == "lpd433_ignore_time_counter"
+      for state in host_structs["struct_state"]))
+  first_entry = True
+  for field in host_structs["struct_state"]:
+    if "lpd433" in field:
+      if not first_entry:
+        str += "\n"
+      else:
+        first_entry = False
+      lpd433 = field["lpd433"]
+      def get(arg):
+        if arg in lpd433:
+          return lpd433[arg]
+        else:
+          return f'cc::lpd433_send_{arg}_default'
+      str += f'std::thread set_{field["name"]}_{host_identifier}(auto const &pi,\n'
+      str += indent(f'auto const &to) {{\n', 2)
+      str += indent(f'return set_lpd433_control_variable(pi, to,\n')
+      str += indent(
+        f'{lpd433["code_off"]}u, {lpd433["code_on"]}u,\n'
+        f'{get("n_bits")},\n'
+        f'{get("n_repeats")},\n'
+        f'{get("intercode_gap")},\n'
+        f'{get("pulse_length_short")},\n'
+        f'{get("pulse_length_long")});\n', 2)
+      str += f'}}\n'
+      str += f'\n'
+      str += f'std::thread set_{field["name"]}(auto const &pi,\n'
+      str += indent(f'control_state_{host_identifier} &state,\n'
+        f'control_params_{host_identifier} const &params,\n'
+        f'auto const &to) {{\n', 2)
+      str += indent(f'set_lpd433_control_variable(state.{field["name"]}, to,\n')
+      str += indent(
+        f'{"state.lpd433_ignore_time_counter" if has_ignore_time else "0"}, '
+        f'{"params.lpd433_ignore_time" if has_ignore_time else "0"});\n', 2)
+      str += indent(f'return set_{field["name"]}_{host_identifier}(pi, to);\n')
+      str += f'}}\n'
+
+  has_control_variables = any(
+    "lpd433" in field for field in host_structs["struct_state"])
+  pi, state, params, var, to = map(lambda x: x if has_control_variables else "",
+    ["pi", "state", "params", " var", "to"])
+
+  for with_state in [False, True]:
+    if not first_entry:
+      str += f'\n'
+
+    str += (f'std::optional<std::thread> '
+      f'set_lpd433_control_variable(auto const &{pi},\n')
+    if with_state:
+      str += indent(f'control_state_{host_identifier} &{state},\n'
+        f'control_params_{host_identifier} const &{params},\n', 2)
+    str += indent(f'lpd433_control_variable_{host_identifier} const{var}, '
+      f'auto const &{to}) {{\n')
+
+    for field in host_structs["struct_state"]:
+      if "lpd433" in field:
+        host_qualifier = "" if with_state else f"_{host_identifier}"
+        state_args = "state, params, " if with_state else ""
+        str += indent(textwrap.dedent(f'''\
+          if (var == lpd433_control_variable_{host_identifier}::{field["name"]})
+            return {{set_{field["name"]}{host_qualifier}(pi, {state_args}to)}};
+          '''))
+
+    str += indent(f'return {{}};\n')
+    str += f'}}\n'
+  return str
+
 def snippet_type_conditionals(control_structs, type_identifier):
   str = f'control_{type_identifier}_base'
   for host_identifier, _ in reversed(control_structs.items()):
@@ -42,6 +260,31 @@ def snippet_type_conditionals(control_structs, type_identifier):
       f'control_{type_identifier}_{host_identifier},\n'
       f'{str}>::type')
   return f'using control_{type_identifier} =\n' + indent(f'{str};\n')
+
+def snippet_hash_struct(control_structs, type_identifier):
+  str = f'std::string_view{{""}}'
+  for host_identifier, _ in reversed(control_structs.items()):
+    str = (f'cc::host == cc::Host::{host_identifier} ?\n'
+      f'hash_struct_control_{type_identifier}_{host_identifier} :\n' +
+      str)
+  return (f'std::string_view constexpr hash_struct_control_{type_identifier}'
+    f'{{\n' + indent(f'{str}\n') + f'}};\n')
+
+def snippet_lpd433_control_variable_parse(control_structs):
+  str = f'auto lpd433_control_variable_parse(auto const &name) {{\n'
+  for host_identifier, _ in control_structs.items():
+    str += indent(f'if constexpr (cc::host == cc::Host::{host_identifier})\n')
+    str += indent(f'return lpd433_control_variable_parse_{host_identifier}('
+      f'name);\n', 2)
+  return str + f'}}\n'
+
+def snippet_set_lpd433_control_variable(control_structs):
+  return textwrap.dedent(f'''\
+    // Placeholder for `snippet_set_lpd433_control_variable`, i.e. something
+    // like `set_ventilation` without state args and without host qualifier in
+    // the name, so that it dispatches to the `cc:host`. I'm not sure I need a
+    // function like that at the moment.
+    ''')
 
 def control_cpp_include(control_structs):
   str = f''
@@ -64,9 +307,20 @@ def control_cpp_include(control_structs):
         str += indent(snippet(host_identifier, struct_fields, type_identifier)
           + sep)
 
-  for type_identifier in type_identifiers:
-    str += indent(snippet_type_conditionals(control_structs, type_identifier)
-      + sep)
+  for snippet in [snippet_enum_lpd433_control_variable,
+      snippet_lpd433_control_variable_name,
+      snippet_lpd433_control_variable_parse_per_host,
+      snippet_update_from_lpd433, snippet_set_lpd433_control_variable_per_host]:
+    for host_identifier, host_structs in control_structs.items():
+      str += indent(snippet(host_identifier, host_structs) + sep)
+
+  for snippet in [snippet_type_conditionals, snippet_hash_struct]:
+    for type_identifier in type_identifiers:
+      str += indent(snippet(control_structs, type_identifier) + sep)
+
+  for snippet in [snippet_lpd433_control_variable_parse,
+      snippet_set_lpd433_control_variable]:
+    str += indent(snippet(control_structs) + sep)
 
   return str + f'}} // namespace control\n'
 

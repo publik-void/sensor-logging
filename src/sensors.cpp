@@ -30,7 +30,8 @@ namespace sensors {
 
   auto setup_sensor_io(auto const &) { return nullptr; }
 
-  sensor sample_sensor(auto const &clock, auto const &) {
+  //sensor sample_sensor(auto const &clock, auto const &) {
+  sensor sample_sensor(std::chrono::system_clock const &clock, auto const &) {
     // NOTE: A design choice I made back when I first started the sensor-logging
     // repository was to use Unix time (as in seconds since epoch) to timestamp
     // each measurement. This function assumes that the `clock` measures Unix

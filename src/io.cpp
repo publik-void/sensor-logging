@@ -309,7 +309,7 @@ std::optional<std::array<std::uint8_t, 8>> mhz19_receive(
   return {packet};
 }
 
-auto lpd433_send_oneshot(auto const &pi, int const gpio_index,
+std::thread lpd433_send_oneshot(auto const &pi, int const gpio_index,
     std::vector<std::uint64_t> const &codes, int const n_bits,
     int const n_repeats, int const intercode_gap, int const pulse_length_short,
     int const pulse_length_long, bool const wait = true) {

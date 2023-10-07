@@ -258,22 +258,26 @@ def snippet_write_fields(sensor_name, sensor_params):
   str += indent(f'auto const original_fill{{out.fill()}};\n')
   str += indent(f'\n')
 
-  str += indent(f'if (wf == WriteFormat::toml)\n')
-  str += indent(f'if (not inner) {{\n', 2)
   str += indent(
-    f'auto const sensor_name{{sensor_name_arg.value_or(name(data))}};\n'
-    f'// NOTE: This requires `sensor_name` to be a proper TOML key.\n'
-    f'if (sensor_name != "")\n', 3)
-  str += indent(f'out << "[[" << sensor_name << ".data]]\\n";\n', 4)
-  str += indent(f'else out << "[[data]]\\n";\n', 3)
-  str += indent(f'}}\n', 2)
+    f'auto const sensor_name{{sensor_name_arg.value_or(name(data))}};\n')
   str += indent(f'\n')
+
+  if bool(sensor_params):
+    str += indent(f'if (wf == WriteFormat::toml) if (not inner) {{\n')
+    str += indent(
+      f'// NOTE: This requires `sensor_name` to be a proper TOML key.\n'
+      f'if (sensor_name != "")\n', 2)
+    str += indent(f'out << "[[" << sensor_name << ".data]]\\n";\n', 3)
+    str += indent(f'else out << "[[data]]\\n";\n', 2)
+    str += indent(f'}}\n')
+    str += indent(f'\n')
 
   if sensor_name != "sensor":
     str += indent(f'write_fields(out, static_cast<sensor>(data), wf, '
-      f'sensor_name_arg, true);\n')
+      f'{{sensor_name}}, {"true" if bool(sensor_params) else "false"});\n')
 
-  str += indent(f'auto const names{{field_names(data)}};\n')
+  if bool(sensor_params):
+    str += indent(f'auto const names{{field_names(data)}};\n')
   str += indent(f'out << std::setfill(\' \');\n')
   i = 0
   for field_name, field_params in sensor_params.items():
@@ -310,7 +314,8 @@ def snippet_write_fields(sensor_name, sensor_params):
   str += indent(f'out.width(original_width);\n', 2)
   str += indent(f'out.flags(original_flags);\n', 2)
   str += indent(f'out.fill(original_fill);\n', 2)
-  str += indent(f'return out << std::endl;\n', 2)
+  str += indent(f'return out << std::endl;\n' if bool(sensor_params) else
+    f'return out;\n', 2)
   str += indent(f'}};\n')
   return str + f'}}\n'
 
@@ -327,9 +332,11 @@ def snippet_write_field_names():
         auto const original_fill{{out.fill()}};
         out << std::setw(0);
 
+        auto const field_names_buffer{{field_names(data)}};
+
         std::string sensor_name{{sensor_name_arg.value_or(name(data))}};
         if (wf == WriteFormat::toml)
-          if (not inner) {{
+          if (not inner and field_names_buffer.size() > 0) {{
             // NOTE: This requires `sensor_name` to be a proper TOML key.
             if (sensor_name != "") out << "[" << sensor_name << "]\\n";
             out << "field_names = [\\n";
@@ -337,7 +344,6 @@ def snippet_write_field_names():
         ''' f'''{base_call}
         // NOTE: This code could make use of more abstraction and less
         // reinventing the wheel, but I don't care, for now…
-        auto const field_names_buffer{{field_names(data)}};
         if (wf == WriteFormat::csv) {{
           if (sensor_name != "") sensor_name += "_";
           for (auto const &field_name : field_names_buffer) {{
@@ -357,7 +363,8 @@ def snippet_write_field_names():
           out.width(original_width);
           out.flags(original_flags);
           out.fill(original_fill);
-          return out << std::endl;
+          if (field_names_buffer.size() > 0) out << "\\n";
+          return out << std::flush;
         }}
       }}''')
 
@@ -368,7 +375,7 @@ def snippet_write_field_names():
   t = f'auto'
   base_call = indent(textwrap.dedent(f'''
     write_field_names(out, static_cast<sensor>(data), wf,
-      std::optional<std::string>(sensor_name), true);
+      std::optional<std::string>(sensor_name), field_names_buffer.size() > 0);
     '''), 4)
   str += snippet(t, base_call)
   return str

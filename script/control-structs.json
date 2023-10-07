@@ -4,10 +4,44 @@
       {
         "name": "ventilation",
         "type": "bool",
-        "default": "false"
+        "default": "false",
+        "lpd433": {
+          "code_off": 4474196,
+          "code_on": 4474193,
+          "n_bits": 24,
+          "intercode_gap": 9950,
+          "pulse_length_short": 300,
+          "pulse_length_long": 900,
+          "buzz_f_hertz": 500
+        }
+      },
+      {
+        "name": "humidification",
+        "type": "bool",
+        "default": "false",
+        "lpd433": {
+          "code_off": 123,
+          "code_on": 789,
+          "n_bits": 24,
+          "intercode_gap": 9950,
+          "pulse_length_short": 300,
+          "pulse_length_long": 900
+        }
+      },
+      {
+        "name": "lpd433_ignore_time_counter",
+        "type": "float",
+        "default": "0.f",
+        "digits": 2
       }
     ],
     "struct_params": [
+      {
+        "name": "lpd433_ignore_time",
+        "type": "float",
+        "default": "5.f",
+        "digits": 2
+      }
     ]
   }
 }

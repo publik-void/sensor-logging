@@ -110,6 +110,16 @@ namespace util {
     return pos;
   }
 
+  std::optional<bool> parse_bool(auto const &str){
+    if (str == "true" or str == "1" or str == "on" or str == "yes")
+      return {true};
+    if (str == "false" or str == "0" or str == "off" or str == "no")
+      return {false};
+    if constexpr (cc::log_errors) std::cerr << log_error_prefix
+      << "parsing \"" << str << "\" as boolean value." << std::endl;
+    return {};
+  }
+
   auto parse_arg_value(auto &&parser, auto &opts, auto const &key,
       auto const &default_value) {
     auto const &opt{opts[key]};
@@ -130,6 +140,83 @@ namespace util {
     else
       return static_cast<long>(std::floor(num));
   }
+
+  auto const ios_error_description{[](auto const &iostate){ return
+    (iostate & std::ios_base::badbit) ? "irrecoverable stream error" :
+    (iostate & std::ios_base::failbit) ? "input/output operation "
+      "failed (formatting or extraction error)" :
+    (iostate & std::ios_base::eofbit) ? "associated input sequence has "
+      "reached end-of-file" :
+    "unknown error"; }};
+
+  auto const safe_exists{[](
+      std::filesystem::path const &path_file){
+    try {
+      if (std::filesystem::exists(path_file)) {
+        if constexpr (cc::log_errors) std::cerr << log_error_prefix
+          << path_file << " already exists." << std::endl;
+        return true;
+      }
+    } catch (std::filesystem::filesystem_error const &e) {
+      if constexpr (cc::log_errors) std::cerr << log_error_prefix <<
+        e.what() << std::endl;
+      return true;
+    }
+    return false;
+  }};
+
+  auto const safe_is_directory{[](std::filesystem::path const &path_dir){
+      try {
+        if (not std::filesystem::is_directory(path_dir)) {
+          if constexpr (cc::log_errors) std::cerr << log_error_prefix
+            << path_dir << " is not a directory." << std::endl;
+          return false;
+        }
+      } catch (std::filesystem::filesystem_error const &e) {
+        if constexpr (cc::log_errors) std::cerr << log_error_prefix << e.what()
+          << std::endl;
+        return false;
+      }
+      return true;
+    }};
+
+  auto const safe_create_directory{[](
+      std::filesystem::path const &path_dir){
+    try {
+      if (not std::filesystem::is_directory(path_dir)) {
+        if (std::filesystem::exists(path_dir)) {
+          if constexpr (cc::log_errors) std::cerr << log_error_prefix
+            << path_dir << " exists, but is not a directory."
+            << std::endl;
+          return false;
+        } else {
+          if (not std::filesystem::create_directory(path_dir)) {
+            if constexpr (cc::log_errors) std::cerr << log_error_prefix
+              << path_dir << " could not be created." << std::endl;
+            return false;
+          }
+        }
+      }
+    } catch (std::filesystem::filesystem_error const &e) {
+      if constexpr (cc::log_errors) std::cerr << log_error_prefix <<
+        e.what() << std::endl;
+      return false;
+    }
+    return true;
+  }};
+
+  auto const safe_open{[](auto &fs, auto const &path_file,
+      auto const &mode){
+    fs.open(path_file, mode);
+    if (not fs.good()) {
+      if constexpr (cc::log_errors) std::cerr << log_error_prefix
+        << "opening file at " << path_file << ": "
+        << util::ios_error_description(fs.rdstate()) << "."
+        << std::endl;
+      return false;
+    }
+    return true;
+  }};
 
 } // namespace util
 

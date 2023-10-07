@@ -76,7 +76,7 @@ namespace cc {
 
   std::chrono::milliseconds constexpr sampling_interval{3000};
   unsigned constexpr samples_per_aggregate{5u};
-  unsigned constexpr aggregates_per_run{60u};
+  unsigned constexpr aggregates_per_run{3u/*60u*/};
 
   using timestamp_duration_t = std::chrono::milliseconds;
   int constexpr timestamp_width{10};
@@ -110,8 +110,8 @@ namespace cc {
 
   std::string_view constexpr basename_dir_data{"data"};
   std::string_view constexpr basename_dir_shortly{"shortly"};
-  std::string_view constexpr basename_file_control_state{".control_state"};
-  std::string_view constexpr basename_file_control_params{".control_params"};
+  std::string_view constexpr basename_file_control_state{".control-state"};
+  std::string_view constexpr basename_file_control_params{".control-params"};
 }
 
 std::string log_info_prefix;
@@ -130,6 +130,7 @@ enum struct MainMode {
   lpd433_listen,
   lpd433_oneshot,
   buzz_oneshot,
+  control,
   shortly,
   daily};
 std::string main_mode_name(MainMode const &mode) {
@@ -139,6 +140,7 @@ std::string main_mode_name(MainMode const &mode) {
   if (mode == MainMode::lpd433_listen ) return "lpd433-listen";
   if (mode == MainMode::lpd433_oneshot) return "lpd433-oneshot";
   if (mode == MainMode::buzz_oneshot  ) return "buzz-oneshot";
+  if (mode == MainMode::control       ) return "control";
   if (mode == MainMode::shortly       ) return "shortly";
   if (mode == MainMode::daily         ) return "daily";
   return "";
@@ -156,6 +158,7 @@ namespace cc {
       {MainMode::lpd433_listen , sensors::WriteFormat::csv },
       {MainMode::lpd433_oneshot, sensors::WriteFormat::csv },
       {MainMode::buzz_oneshot  , sensors::WriteFormat::csv },
+      {MainMode::control       , sensors::WriteFormat::csv },
       {MainMode::shortly       , sensors::WriteFormat::csv },
       {MainMode::daily         , sensors::WriteFormat::csv }};
 
@@ -285,9 +288,10 @@ int main(int const argc, char const * const argv[]) {
       << "Info logging to stderr enabled.\n" << log_info_prefix
       << "Error logging to stderr " << (cc::log_errors ? "en" : "dis")
       << "abled." << std::endl;
-    if constexpr (not cc::ndebug) std::cerr << log_info_prefix
-      << "`NDEBUG` not defined, meaning this is probably not a release build."
-      << std::endl;
+    std::string_view constexpr not_str{cc::ndebug ? "" : "not "};
+    std::cerr << log_info_prefix
+      << "`NDEBUG` " << not_str << "defined, meaning this is probably "
+      << not_str << "a release build." << std::endl;
   }
   if constexpr (cc::log_errors)
     log_error_prefix = args.front() + ": " + cc::log_error_string.data() + ": ";
@@ -408,7 +412,10 @@ int main(int const argc, char const * const argv[]) {
         "  [--pulse-width=<pulse width>]\n"
         "    Play a single beep on the buzzer.\n"
         "\n"
-        "  shortly [--now]\n"
+        "  control <variable> <setting>\n"
+        "    Set an environment control variable manually.\n"
+        "\n"
+        "  shortly [--now] [--write-control[=<file path>]]\n"
         "    The main mode which samples sensors at periodic time points and "
              "writes the\n"
         "    data into CSV files.\n"
@@ -419,6 +426,10 @@ int main(int const argc, char const * const argv[]) {
             "full sampling\n"
         "    duration (counting from previous midnight) to finish before "
             "starting.\n"
+        "\n"
+        "    If `--write-control` is passed, the parameters and state of the "
+            "environment\n"
+        "    control circuit are written to stdout, or <file path>, if given.\n"
         "\n"
         "  daily [opts...]\n"
         "    Calls a Python interpreter running the `daily.py` script with "
@@ -675,10 +686,43 @@ int main(int const argc, char const * const argv[]) {
 
     buzz_oneshot(pi, cc::buzzer_gpio_index.value(), t_seconds, f_hertz,
       pulse_width);
-  } else if (main_mode == MainMode::shortly) {
-    flags_t flags{{"now", false}};
+  } else if (main_mode == MainMode::control) {
+    flags_t flags{};
     opts_t opts{};
     arg_itr = util::get_cmd_args(flags, opts, arg_itr, args.end());
+
+    if (arg_itr >= args.end()) {
+      if constexpr (cc::log_errors) std::cerr << log_error_prefix
+        << "expected 2 more arguments" << std::endl;
+      return cc::exit_code_error;
+    }
+    auto const &variable{*(arg_itr++)};
+
+    if (arg_itr >= args.end()) {
+      if constexpr (cc::log_errors) std::cerr << log_error_prefix
+        << "expected 1 more argument" << std::endl;
+      return cc::exit_code_error;
+    }
+    auto const &setting{*(arg_itr++)};
+
+    auto const var_opt{control::lpd433_control_variable_parse(variable)};
+    if (not var_opt.has_value()) return cc::exit_code_error;
+
+    auto const to_opt{util::parse_bool(setting)};
+    if (not to_opt.has_value()) return cc::exit_code_error;
+
+    io::Pi const pi{};
+    if (io::errored(pi)) return cc::exit_code_error;
+
+    control::set_lpd433_control_variable(pi, var_opt.value(), to_opt.value());
+
+  } else if (main_mode == MainMode::shortly) {
+    flags_t flags{{"now", false}, {"write-control", false}};
+    opts_t opts{{"write-control", {}}};
+    arg_itr = util::get_cmd_args(flags, opts, arg_itr, args.end());
+
+    bool const write_control{
+      flags["write-control"] or opts["write-control"].has_value()};
 
     if (not flags["now"])
       if (interruptible_wait_until(clock, time_point_next_shortly_run))
@@ -704,15 +748,18 @@ int main(int const argc, char const * const argv[]) {
         return a;
       }()};
 
+    std::ofstream control_file_stream;
+    std::ostream * const control_out{opts["write-control"].has_value() ?
+      &control_file_stream : &(std::cout)};
+
     // NOTE: I am not sure if this is even needed. I think all file streams will
     // be closed anyway when they go out of scope.
     auto const close_files{[&](){
         if (main_opts["base-path"].has_value()) for (auto &fs : file_streams)
           if (fs.is_open()) fs.close();
+        if (write_control and control_file_stream.is_open())
+          control_file_stream.close();
       }};
-
-    // TODO: Construct from previous serialization if available
-    control::control_state control_state{};
 
     bool error_during_resource_allocation;
 
@@ -732,82 +779,70 @@ int main(int const argc, char const * const argv[]) {
         main_opts["base-path"].value()} / cc::basename_dir_data /
         cc::basename_dir_shortly};
 
-      try {
-        if (not std::filesystem::is_directory(path_dir_shortly)) {
-          error_during_resource_allocation = true;
-          if constexpr (cc::log_errors) std::cerr << log_error_prefix
-            << path_dir_shortly << " is not a directory." << std::endl;
-        }
-      } catch (std::filesystem::filesystem_error const &e) {
-        error_during_resource_allocation = true;
-        if constexpr (cc::log_errors) std::cerr << log_error_prefix << e.what()
-          << std::endl;
-      }
+      if (not util::safe_is_directory(path_dir_shortly))
+        return cc::exit_code_error;
 
-      if (not error_during_resource_allocation)
-        util::for_constexpr([&](auto const &name, auto &fs){
-            if (error_during_resource_allocation) return;
+      util::for_constexpr([&](auto const &name, auto &fs){
+          if (error_during_resource_allocation) return;
 
-            auto const dirname_file{path_dir_shortly / cc::hostname};
-            try {
-              if (not std::filesystem::is_directory(dirname_file)) {
-                if (std::filesystem::exists(dirname_file)) {
-                  error_during_resource_allocation = true;
-                  if constexpr (cc::log_errors) std::cerr << log_error_prefix
-                    << dirname_file << " exists, but is not a directory."
-                    << std::endl;
-                } else {
-                  if (not std::filesystem::create_directory(dirname_file)) {
-                    error_during_resource_allocation = true;
-                    if constexpr (cc::log_errors) std::cerr << log_error_prefix
-                      << dirname_file << " could not be created." << std::endl;
-                  }
-                }
-              }
-            } catch (std::filesystem::filesystem_error const &e) {
-              error_during_resource_allocation = true;
-              if constexpr (cc::log_errors) std::cerr << log_error_prefix <<
-                e.what() << std::endl;
-            }
-            if (error_during_resource_allocation) return;
+          auto const dirname_file{path_dir_shortly / cc::hostname};
+          if (not util::safe_create_directory(dirname_file))
+            { error_during_resource_allocation = true; return; }
 
-            std::filesystem::path const basename_file{filename_prefix +
-              "-" + name + "." + sensors::write_format_ext(write_format)};
-            auto const path_file{dirname_file / basename_file};
-            try {
-              if (std::filesystem::exists(path_file)) {
-                error_during_resource_allocation = true;
-                if constexpr (cc::log_errors) std::cerr << log_error_prefix
-                  << path_file << " already exists." << std::endl;
-              }
-            } catch (std::filesystem::filesystem_error const &e) {
-              error_during_resource_allocation = true;
-              if constexpr (cc::log_errors) std::cerr << log_error_prefix <<
-                e.what() << std::endl;
-            }
-            if (error_during_resource_allocation) return;
+          std::filesystem::path const basename_file{filename_prefix +
+            "-" + name + "." + sensors::write_format_ext(write_format)};
+          auto const path_file{dirname_file / basename_file};
+          if (util::safe_exists(path_file))
+            { error_during_resource_allocation = true; return; }
 
-            fs.open(path_file, std::ios::out);
-            if (not fs.good()) {
-              error_during_resource_allocation = true;
-              auto const state{fs.rdstate()};
-              auto const error_description{
-                (state & std::ios_base::badbit) ? "irrecoverable stream error" :
-                (state & std::ios_base::badbit) ? "input/output operation "
-                  "failed (formatting or extraction error)" :
-                (state & std::ios_base::badbit) ? "irrecoverable stream error" :
-                "unknown error"};
-              if constexpr (cc::log_errors) std::cerr << log_error_prefix
-                << "opening file at " << path_file << ": "
-                << error_description << "." << std::endl;
-            }
-          }, cc::sensors_physical_instance_names, file_streams);
+          if (not util::safe_open(fs, path_file, std::ios::out))
+            { error_during_resource_allocation = true; return; }
+
+          if constexpr (cc::log_info) std::cerr << log_info_prefix
+            << "Log for " << name << " will be written to " << path_file << "."
+            << std::endl;
+        }, cc::sensors_physical_instance_names, file_streams);
       if (error_during_resource_allocation)
         { close_files(); return cc::exit_code_error; }
     }
 
+    // Open file for writing environment control output
+    if (opts["write-control"].has_value()) {
+      std::filesystem::path path_file{opts["write-control"].value()};
+      if (util::safe_exists(path_file))
+        { close_files(); return cc::exit_code_error; }
+      if (not util::safe_open(control_file_stream, path_file, std::ios::out))
+        { close_files(); return cc::exit_code_error; }
+      if constexpr (cc::log_info) std::cerr << log_info_prefix
+        << "Control log will be written to " << path_file << "."
+        << std::endl;
+    }
+
+    // Instantiate control parameters and state
+    // NOTE: I have the functionality to (de-)serialize the control parameters
+    // in the same way as I do with the control state. I planned on doing this,
+    // but now I can't remember any good reason for it. Tuning these parameters
+    // is probably best done by changing their respective "default" field in the
+    // JSON file and recompiling the binary. And this then allows me to
+    // instantiate them as `constexpr`-qualified here:
+    control::control_params constexpr control_params{};
+    //auto const path_file_control_params_opt{main_opts["base-path"].has_value() ?
+    //  std::make_optional(control::path_file_control_params_get(
+    //    main_opts["base-path"].value())) :
+    //  std::optional<std::filesystem::path>{}};
+    auto const path_file_control_state_opt{main_opts["base-path"].has_value() ?
+      std::make_optional(control::path_file_control_state_get(
+        main_opts["base-path"].value())) :
+      std::optional<std::filesystem::path>{}};
+    //auto control_params{control::deserialize_or<control::control_params>(
+    //  path_file_control_params_opt, "environment control parameters")};
+    auto control_state{control::deserialize_or<control::control_state>(
+      path_file_control_state_opt, "environment control state")};
+
+    // Initialize sensor IO
     io::Pi const pi{};
-    if (io::errored(pi)) return cc::exit_code_error;
+    if (io::errored(pi))
+      { close_files(); return cc::exit_code_error; }
 
     error_during_resource_allocation = false;
     auto const sensor_ios{util::map_constexpr(
@@ -816,7 +851,24 @@ int main(int const argc, char const * const argv[]) {
         if (io::errored(sensor_io)) error_during_resource_allocation = true;
         return sensor_io;
       }, cc::blueprint, cc::sensors_io_setup_args)};
-    if (error_during_resource_allocation) return cc::exit_code_error;
+    if (error_during_resource_allocation)
+      { close_files(); return cc::exit_code_error; }
+
+    auto const lpd433_receiver_opt{cc::lpd433_receiver_gpio_index.has_value()
+      ? std::optional<io::LPD433Receiver>{
+        io::LPD433Receiver{pi, cc::lpd433_receiver_gpio_index.value()}}
+      : std::optional<io::LPD433Receiver>{}};
+    if (lpd433_receiver_opt.has_value() and
+        io::errored(lpd433_receiver_opt.value()))
+      { close_files(); return cc::exit_code_error; }
+
+    // Initial output
+    if (write_control) {
+      sensors::write_field_names((*control_out),
+        control::as_sensor(control_params, clock), write_format);
+      sensors::write_fields((*control_out),
+        control::as_sensor(control_params, clock), write_format);
+    }
 
     util::for_constexpr([&](auto const &s, auto const &name,
           std::ostream * const &out, bool const &print_newline){
@@ -824,6 +876,10 @@ int main(int const argc, char const * const argv[]) {
             (*out), s, write_format, name, not print_newline); },
       cc::blueprint, cc::sensors_physical_instance_names, outs, print_newlines);
 
+    if (write_control) sensors::write_field_names((*control_out),
+        control::as_sensor(control_state, clock), write_format);
+
+    // Start sampling
     for (unsigned aggregate_index{0u};
         aggregate_index < cc::aggregates_per_run;
         ++aggregate_index) {
@@ -863,7 +919,10 @@ int main(int const argc, char const * const argv[]) {
             }, aggregate, outs, print_newlines);
         }
 
-        control_state = control::control_tick(pi, control_state, xs);
+        if (write_control) sensors::write_fields((*control_out),
+          control::as_sensor(control_state, clock), write_format);
+        control_state = control::control_tick(control_state, control_params,
+          xs, pi, lpd433_receiver_opt);
 
         auto const time_point_next_sample{time_point_reference +
           cc::sampling_interval * (aggregate_index * cc::samples_per_aggregate +
@@ -872,6 +931,11 @@ int main(int const argc, char const * const argv[]) {
           { close_files(); return cc::exit_code_interrupt; }
       }
     }
+
+    //if (path_file_control_params_opt.has_value())
+    //  safe_serialize(control_params, path_file_control_params_opt.value());
+    if (path_file_control_state_opt.has_value())
+      safe_serialize(control_state, path_file_control_state_opt.value());
 
     close_files();
   } else if (main_mode == MainMode::daily) {
