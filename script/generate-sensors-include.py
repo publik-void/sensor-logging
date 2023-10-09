@@ -433,6 +433,20 @@ with open(sensors_json_filename, "r") as f:
 with open(control_structs_json_filename, "r") as f:
   control_structs = json.load(f)
 
+# NOTE: This paragraph is duplicated (copy-pasted) code from
+# `generate-control-include.py`. Yes, not pretty. Make sure to keep in sync!
+for host_identifier, host_structs in control_structs.items():
+  for sensor_input in control_structs[host_identifier]["sensor_inputs"]:
+    sensor_name, variable_name = sensor_input["sensor"], sensor_input["name"]
+    sensor_field = sensors[sensor_name][variable_name]
+    control_structs[host_identifier]["struct_state"].append({
+      "name": sensor_input["sensor_physical_instance_name"] + "_" +
+        variable_name,
+      "type": sensor_field["type"],
+      "width": sensor_field["width"],
+      "decimals": sensor_field["decimals"],
+      "default": sensor_input["default"]})
+
 # sensors = expand(sensors)
 for host_identifier, structs in control_structs.items():
   for type_identifier in ["state", "params"]:

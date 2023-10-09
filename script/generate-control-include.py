@@ -180,6 +180,35 @@ def snippet_update_from_lpd433(host_identifier, host_structs):
     '''), 0)
   return str
 
+def snippet_update_from_sensors(host_identifier, host_structs):
+  str = f'bool update_from_sensors(auto const &xs,\n'
+  str += indent(f'control_state_{host_identifier} &succ) {{\n', 2)
+  str += indent(f'bool has_updated{{false}};\n')
+  str += f'\n'
+  for sensor_input in host_structs["sensor_inputs"]:
+    variable_name = sensor_input["name"]
+    physical_name = sensor_input["sensor_physical_instance_name"]
+    input_name = physical_name + "_" + variable_name
+    str += indent(f'auto const &{input_name}_opt{{\n')
+    str += indent(f'cc::get_sensor<"{physical_name}">(xs).{variable_name}}};'
+      f'\n', 2)
+    str += indent(f'if ({input_name}_opt.has_value()) {{\n', 1)
+    str += indent(f'succ.{input_name} =\n', 2)
+    str += indent(f'{input_name}_opt.value();\n', 3)
+    if "min" in sensor_input:
+      str += indent(f'succ.{input_name} =\n', 2)
+      str += indent(f'std::max(succ.{input_name}, '
+        f'{sensor_input["min"]});\n', 3)
+    if "max" in sensor_input:
+      str += indent(f'succ.{input_name} =\n', 2)
+      str += indent(f'std::min(succ.{input_name}, '
+        f'{sensor_input["max"]});\n', 3)
+    str += indent(f'has_updated = true;\n', 2)
+    str += indent(f'}}\n', 1)
+    str += f'\n'
+  str += indent(f'return has_updated;\n')
+  return str + f'}}\n'
+
 def snippet_set_lpd433_control_variable_per_host(host_identifier, host_structs):
   str = f''
   has_ignore_time = (
@@ -272,11 +301,19 @@ def snippet_hash_struct(control_structs, type_identifier):
 
 def snippet_lpd433_control_variable_parse(control_structs):
   str = f'auto lpd433_control_variable_parse(auto const &name) {{\n'
+  is_first_entry = True
   for host_identifier, _ in control_structs.items():
-    str += indent(f'if constexpr (cc::host == cc::Host::{host_identifier})\n')
+    str += indent(("" if is_first_entry else "else ") +
+      f'if constexpr (cc::host == cc::Host::{host_identifier})\n')
     str += indent(f'return lpd433_control_variable_parse_{host_identifier}('
       f'name);\n', 2)
-  str += indent(f'return std::make_optional(0);\n')
+    if is_first_entry:
+      is_first_entry = False
+  str_default_case = indent(f'return std::make_optional(0);\n')
+  if bool(control_structs.items()):
+    str += indent(f'else\n' + str_default_case)
+  else:
+    str += str_default_case
   return str + f'}}\n'
 
 def snippet_set_lpd433_control_variable(control_structs):
@@ -287,7 +324,7 @@ def snippet_set_lpd433_control_variable(control_structs):
     // function like that at the moment.
     ''')
 
-def control_cpp_include(control_structs):
+def control_cpp_include(control_structs, sensors):
   str = f''
   sep = f'\n'
 
@@ -298,6 +335,18 @@ def control_cpp_include(control_structs):
   str += f'namespace control {{\n' + sep
 
   type_identifiers = ["state", "params"]
+
+  for host_identifier, host_structs in control_structs.items():
+    for sensor_input in control_structs[host_identifier]["sensor_inputs"]:
+      sensor_name, variable_name = sensor_input["sensor"], sensor_input["name"]
+      sensor_field = sensors[sensor_name][variable_name]
+      control_structs[host_identifier]["struct_state"].append({
+        "name": sensor_input["sensor_physical_instance_name"] + "_" +
+          variable_name,
+        "type": sensor_field["type"],
+        "width": sensor_field["width"],
+        "decimals": sensor_field["decimals"],
+        "default": sensor_input["default"]})
 
   # str += snippet_…() + sep
 
@@ -311,7 +360,8 @@ def control_cpp_include(control_structs):
   for snippet in [snippet_enum_lpd433_control_variable,
       snippet_lpd433_control_variable_name,
       snippet_lpd433_control_variable_parse_per_host,
-      snippet_update_from_lpd433, snippet_set_lpd433_control_variable_per_host]:
+      snippet_update_from_lpd433, snippet_update_from_sensors,
+      snippet_set_lpd433_control_variable_per_host]:
     for host_identifier, host_structs in control_structs.items():
       str += indent(snippet(host_identifier, host_structs) + sep)
 
@@ -325,15 +375,19 @@ def control_cpp_include(control_structs):
 
   return str + f'}} // namespace control\n'
 
+sensors_json_filename = os.path.join(os.path.dirname(__file__),
+  "sensors.json")
 control_structs_json_filename = os.path.join(os.path.dirname(__file__),
   "control-structs.json")
 control_cpp_filename = os.path.join(os.path.dirname(__file__), "..", "src",
   "control.generated.cpp")
 
+with open(sensors_json_filename, "r") as f:
+  sensors = json.load(f)
 with open(control_structs_json_filename, "r") as f:
   control_structs = json.load(f)
 
-control_cpp_include_str = control_cpp_include(control_structs)
+control_cpp_include_str = control_cpp_include(control_structs, sensors)
 
 with open(control_cpp_filename, "w") as f:
   f.write(control_cpp_include_str)

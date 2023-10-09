@@ -208,17 +208,12 @@ namespace control {
       static_cast<float>(cc::sampling_interval.count()))};
     float constexpr sampling_interval{1.f / sampling_rate};
 
-    decltype(state) succ{state};
+    control_state_lasse_raspberrypi_1 succ{state};
 
-    auto const update{
+    auto const lpd433_update{
       update_from_lpd433(pi, lpd433_receiver_opt, succ, sampling_interval)};
 
-    // TODO: Generate this too ("update from sensors")?
-    auto const &mhz19_0{cc::get_sensor<"mhz19_0">(xs)};
-    auto const &dht22_2{cc::get_sensor<"dht22_2">(xs)};
-    succ.co2_concentration =
-      mhz19_0.co2_concentration.value_or(state.co2_concentration);
-    succ.humidity = dht22_2.humidity.value_or(state.humidity);
+    auto const sensor_update{update_from_sensors(xs, succ)};
 
     //set_ventilation(pi, succ, params, not succ.ventilation);
 

@@ -1,50 +1,4 @@
-#include <filesystem>
-#include <fstream>
-#include <iostream>
-#include <ios>
-#include <iomanip>
-#include <string>
-#include <string_view>
-#include <regex>
-#include <utility>
-#include <optional>
-#include <variant>
-#include <tuple>
-#include <array>
-#include <vector>
-#include <ranges>
-#include <unordered_map>
-#include <algorithm>
-#include <cmath>
-#include <cstdint>
-#include <cinttypes>
-#include <csignal>
-#include <cstdlib>
-#include <limits>
-#include <atomic>
-#include <mutex>
-#include <condition_variable>
-#include <thread>
-#include <future>
-#include <ctime>
-#include <chrono>
-#include <ratio>
-#include <type_traits>
-#include <stdexcept>
-
-// TODO: Replace `#include` directives with `import` statements. On Debian
-// Bullseye, which is still the basis for the current Raspberry Pi OS at the
-// time of writing this comment, the GCC (and standard Clang) version is too old
-// to support the use of modules. I could perhaps rely on backports or clang,
-// but I think I won't mess around with those options for now. but maybe I'll
-// update to Debian Bookworm when it is possible, which surely comes with a
-// newer GCC version.
-
-extern "C" {
-  #include <pigpiod_if2.h>
-  #include "DHTXXD.h"
-  #include "_433D.h"
-}
+// #include "includes.h" // Commented out, because CMake handles this
 
 #include "machine.generated.cpp"
 
@@ -892,21 +846,20 @@ int main(int const argc, char const * const argv[]) {
       { close_files(); return cc::exit_code_error; }
 
     // Initial output
-    if (write_control) {
-      sensors::write_field_names((*control_out),
-        control::as_sensor(control_params, clock), write_format);
-      sensors::write_fields((*control_out),
-        control::as_sensor(control_params, clock), write_format);
-    }
-
     util::for_constexpr([&](auto const &s, auto const &name,
           std::ostream * const &out, bool const &print_newline){
         sensors::write_field_names(
             (*out), s, write_format, name, not print_newline); },
       cc::blueprint, cc::sensors_physical_instance_names, outs, print_newlines);
 
-    if (write_control) sensors::write_field_names((*control_out),
+    if (write_control) {
+      sensors::write_field_names((*control_out),
+        control::as_sensor(control_params, clock), write_format);
+      sensors::write_fields((*control_out),
+        control::as_sensor(control_params, clock), write_format);
+      sensors::write_field_names((*control_out),
         control::as_sensor(control_state, clock), write_format);
+    }
 
     // Start sampling
     for (unsigned aggregate_index{0u};

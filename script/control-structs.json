@@ -29,20 +29,6 @@
         }
       },
       {
-        "name": "humidity",
-        "type": "float",
-        "default": "50.f",
-        "width": 3,
-        "decimals": 1
-      },
-      {
-        "name": "co2_concentration",
-        "type": "float",
-        "default": "400.f",
-        "width": 4,
-        "decimals": 1
-      },
-      {
         "name": "lpd433_ignore_time_counter",
         "type": "float",
         "default": "0.f",
@@ -57,6 +43,24 @@
         "default": "5.f",
         "width": 1,
         "decimals": 1
+      }
+    ],
+    "sensor_inputs" : [
+      {
+        "sensor": "mhz19",
+        "sensor_physical_instance_name": "mhz19_0",
+        "name": "co2_concentration",
+        "default": "400.f",
+        "min": "200.f",
+        "max": "5000.f"
+      },
+      {
+        "sensor": "dht22",
+        "sensor_physical_instance_name": "dht22_2",
+        "name": "humidity",
+        "default": "50.f",
+        "min": "0.f",
+        "max": "100.f"
       }
     ]
   }
