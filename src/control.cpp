@@ -162,6 +162,11 @@ namespace control {
     return set_lpd433_control_variable(pi, to, code_off, code_on, n_bits,
       n_repeats, intercode_gap, pulse_length_short, pulse_length_long);
   }
+
+  std::optional<std::thread> set_lpd433_control_variable(auto const &pi,
+      int const var, auto const &to) {
+    return {};
+  }
 } // namespace control
 
 #include "control.generated.cpp"
@@ -203,7 +208,7 @@ namespace control {
       static_cast<float>(cc::sampling_interval.count()))};
     float constexpr sampling_interval{1.f / sampling_rate};
 
-    control_state succ{state};
+    decltype(state) succ{state};
 
     auto const update{
       update_from_lpd433(pi, lpd433_receiver_opt, succ, sampling_interval)};

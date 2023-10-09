@@ -189,8 +189,7 @@ namespace cc {
   auto constexpr sensors_io_setup_args_lasse_raspberrypi_1{std::make_tuple(
     std::make_tuple(5, DHTXX),
     std::make_tuple(6, DHTXX),
-    std::make_tuple(const_cast<char *>("/dev/serial0"), 9600u),
-    )};
+    std::make_tuple(const_cast<char *>("/dev/serial0"), 9600u))};
   std::optional<int> constexpr
     lpd433_receiver_gpio_index_lasse_raspberrypi_1{24},
     lpd433_transmitter_gpio_index_lasse_raspberrypi_1{23},

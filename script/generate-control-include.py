@@ -238,7 +238,7 @@ def snippet_set_lpd433_control_variable_per_host(host_identifier, host_structs):
       str += indent(f'control_state_{host_identifier} &{state},\n'
         f'control_params_{host_identifier} const &{params},\n', 2)
     str += indent(f'lpd433_control_variable_{host_identifier} const{var}, '
-      f'auto const &{to}) {{\n')
+      f'auto const &{to}) {{\n', 2)
 
     for field in host_structs["struct_state"]:
       if "lpd433" in field:
@@ -276,6 +276,7 @@ def snippet_lpd433_control_variable_parse(control_structs):
     str += indent(f'if constexpr (cc::host == cc::Host::{host_identifier})\n')
     str += indent(f'return lpd433_control_variable_parse_{host_identifier}('
       f'name);\n', 2)
+  str += indent(f'return std::make_optional(0);\n')
   return str + f'}}\n'
 
 def snippet_set_lpd433_control_variable(control_structs):
