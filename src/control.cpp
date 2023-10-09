@@ -193,8 +193,8 @@ namespace control {
   }
 
   auto control_tick(
-      control_state_lasse_raspberrypi_0 const &state,
-      control_params_lasse_raspberrypi_0 const &params,
+      control_state_lasse_raspberrypi_1 const &state,
+      control_params_lasse_raspberrypi_1 const &params,
       auto const &xs, auto const &pi,
       std::optional<io::LPD433Receiver> const &lpd433_receiver_opt) {
     float constexpr sampling_rate{
@@ -210,10 +210,10 @@ namespace control {
 
     // TODO: Generate this too ("update from sensors")?
     auto const &mhz19_0{cc::get_sensor<"mhz19_0">(xs)};
-    auto const &dht22_1{cc::get_sensor<"dht22_1">(xs)};
+    auto const &dht22_2{cc::get_sensor<"dht22_2">(xs)};
     succ.co2_concentration =
       mhz19_0.co2_concentration.value_or(state.co2_concentration);
-    succ.humidity = dht22_1.humidity.value_or(state.humidity);
+    succ.humidity = dht22_2.humidity.value_or(state.humidity);
 
     //set_ventilation(pi, succ, params, not succ.ventilation);
 

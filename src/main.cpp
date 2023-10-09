@@ -165,35 +165,36 @@ namespace cc {
   // Configuration of setup of physical sensors depending on machine
 
   using sensors_tuple_t_lasse_raspberrypi_0 = std::tuple<
-    sensors::mhz19,
     sensors::sensorhub,
-    sensors::dht22,
     sensors::dht22>;
   auto constexpr sensors_physical_instance_names_lasse_raspberrypi_0{
-    std::to_array({"mhz19_0",
-                   "sensorhub_0",
-                   "dht22_0",
-                   "dht22_1"})};
+    std::to_array({"sensorhub_0",
+                   "dht22_0"})};
   auto constexpr sensors_io_setup_args_lasse_raspberrypi_0{std::make_tuple(
-    std::make_tuple(const_cast<char *>("/dev/serial0"), 9600u),
     std::make_tuple(0x1u, 0x17u),
-    std::make_tuple( 4, DHTXX),
-    std::make_tuple(16, DHTXX))};
+    std::make_tuple(4, DHTXX))};
   std::optional<int> constexpr
-    lpd433_receiver_gpio_index_lasse_raspberrypi_0{27},
-    lpd433_transmitter_gpio_index_lasse_raspberrypi_0{17},
-    buzzer_gpio_index_lasse_raspberrypi_0{26};
+    lpd433_receiver_gpio_index_lasse_raspberrypi_0{},
+    lpd433_transmitter_gpio_index_lasse_raspberrypi_0{},
+    buzzer_gpio_index_lasse_raspberrypi_0{};
 
   using sensors_tuple_t_lasse_raspberrypi_1 = std::tuple<
-    >;
+    sensors::dht22,
+    sensors::dht22,
+    sensors::mhz19>;
   auto constexpr sensors_physical_instance_names_lasse_raspberrypi_1{
-    std::to_array({"dht22_2"})};
+    std::to_array({"dht22_1",
+                   "dht22_2",
+                   "mhz19_0"})};
   auto constexpr sensors_io_setup_args_lasse_raspberrypi_1{std::make_tuple(
+    std::make_tuple(5, DHTXX),
+    std::make_tuple(6, DHTXX),
+    std::make_tuple(const_cast<char *>("/dev/serial0"), 9600u),
     )};
   std::optional<int> constexpr
-    lpd433_receiver_gpio_index_lasse_raspberrypi_1{},
-    lpd433_transmitter_gpio_index_lasse_raspberrypi_1{},
-    buzzer_gpio_index_lasse_raspberrypi_1{};
+    lpd433_receiver_gpio_index_lasse_raspberrypi_1{24},
+    lpd433_transmitter_gpio_index_lasse_raspberrypi_1{23},
+    buzzer_gpio_index_lasse_raspberrypi_1{16};
 
   //
 
