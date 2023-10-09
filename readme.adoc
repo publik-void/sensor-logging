@@ -10,3 +10,4 @@ placeholder instead of the previous out-of-date text.
 * Make sure the repository comes with empty folders `data/shortly`,
   `data/daily`, and `logs/daily` when cloning.
 * Check that TOML output is usable
+* Write a small web server that shows a plot of the latest data?

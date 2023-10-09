@@ -208,6 +208,13 @@ namespace control {
     auto const update{
       update_from_lpd433(pi, lpd433_receiver_opt, succ, sampling_interval)};
 
+    // TODO: Generate this too ("update from sensors")?
+    auto const &mhz19_0{cc::get_sensor<"mhz19_0">(xs)};
+    auto const &dht22_1{cc::get_sensor<"dht22_1">(xs)};
+    succ.co2_concentration =
+      mhz19_0.co2_concentration.value_or(state.co2_concentration);
+    succ.humidity = dht22_1.humidity.value_or(state.humidity);
+
     //set_ventilation(pi, succ, params, not succ.ventilation);
 
     return succ;

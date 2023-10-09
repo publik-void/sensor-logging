@@ -29,10 +29,25 @@
         }
       },
       {
+        "name": "humidity",
+        "type": "float",
+        "default": "50.f",
+        "width": 3,
+        "decimals": 1
+      },
+      {
+        "name": "co2_concentration",
+        "type": "float",
+        "default": "400.f",
+        "width": 4,
+        "decimals": 1
+      },
+      {
         "name": "lpd433_ignore_time_counter",
         "type": "float",
         "default": "0.f",
-        "digits": 2
+        "width": 1,
+        "decimals": 1
       }
     ],
     "struct_params": [
@@ -40,7 +55,8 @@
         "name": "lpd433_ignore_time",
         "type": "float",
         "default": "5.f",
-        "digits": 2
+        "width": 1,
+        "decimals": 1
       }
     ]
   }

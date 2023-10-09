@@ -165,15 +165,20 @@ namespace cc {
   // Configuration of setup of physical sensors depending on machine
 
   using sensors_tuple_t_lasse_raspberrypi_0 = std::tuple<
-    //sensors::mhz19,
+    sensors::mhz19,
     sensors::sensorhub,
+    sensors::dht22,
     sensors::dht22>;
   auto constexpr sensors_physical_instance_names_lasse_raspberrypi_0{
-    std::to_array({"sensorhub_0", "dht22_0"})};
+    std::to_array({"mhz19_0",
+                   "sensorhub_0",
+                   "dht22_0",
+                   "dht22_1"})};
   auto constexpr sensors_io_setup_args_lasse_raspberrypi_0{std::make_tuple(
-    //std::make_tuple(const_cast<char *>("/dev/serial0"), 9600u),
+    std::make_tuple(const_cast<char *>("/dev/serial0"), 9600u),
     std::make_tuple(0x1u, 0x17u),
-    std::make_tuple(4, DHTXX))};
+    std::make_tuple( 4, DHTXX),
+    std::make_tuple(16, DHTXX))};
   std::optional<int> constexpr
     lpd433_receiver_gpio_index_lasse_raspberrypi_0{27},
     lpd433_transmitter_gpio_index_lasse_raspberrypi_0{17},
@@ -235,6 +240,30 @@ namespace cc {
     buzzer_gpio_index{host == Host::lasse_raspberrypi_0
       ? buzzer_gpio_index_lasse_raspberrypi_0
       : buzzer_gpio_index_lasse_raspberrypi_1};
+
+  template<size_t n>
+  struct template_string_literal_helper {
+    char value[n];
+    constexpr template_string_literal_helper(const char (&str)[n]) {
+      std::copy_n(str, n, value);
+    }
+  };
+
+  // NOTE: On Raspberry Pi OS Bullseye, where I was developing this, Clang was
+  // only version 11.0. To use a string literal as template parameter in the way
+  // these functions do required GCC or a newer version of Clang.
+  template<template_string_literal_helper name>
+  std::size_t constexpr get_sensor_physical_instance_index(){
+    auto constexpr it{std::find(cc::sensors_physical_instance_names.cbegin(),
+      cc::sensors_physical_instance_names.cend(),
+      std::string_view{name.value})};
+    return it - cc::sensors_physical_instance_names.cbegin();
+  }
+  template<template_string_literal_helper name>
+  auto constexpr get_sensor(auto const &sensors) {
+    auto constexpr i{get_sensor_physical_instance_index<name>()};
+    return std::get<i>(sensors);
+  }
 
 }
 
