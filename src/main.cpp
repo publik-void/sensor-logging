@@ -62,6 +62,9 @@ namespace cc {
   float constexpr buzz_f_hertz_default{1000.f};
   float constexpr buzz_pulse_width_default{.1f};
 
+  std::chrono::milliseconds constexpr mhz19_receive_timeout_default{1000};
+  std::chrono::milliseconds constexpr mhz19_receive_interval_default{50};
+
   std::string_view constexpr basename_dir_data{"data"};
   std::string_view constexpr basename_dir_shortly{"shortly"};
   std::string_view constexpr basename_file_control_state{".control-state"};

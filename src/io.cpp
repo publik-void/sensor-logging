@@ -1,7 +1,8 @@
 namespace io {
 
-template <typename T>
-bool errored(T const &handle_container) { return handle_container.handle < 0; }
+bool errored(auto const &handle_container) {
+  return handle_container.handle < 0;
+}
 
 struct Pi {
   int handle;
@@ -80,24 +81,25 @@ struct I2C {
 struct Serial {
   int handle;
   int const pi_handle;
+  std::string const tty;
   operator unsigned() const { return static_cast<unsigned>(this->handle); }
 
   Serial(Serial const &) = delete;
   Serial & operator=(Serial const &) = delete;
 
   Serial(int const pi_handle, char * const tty, unsigned const baud_rate,
-      unsigned const flags = 0u) : 
+      unsigned const flags = 0u) :
       handle{serial_open(pi_handle, tty, baud_rate, flags)},
-      pi_handle{pi_handle} {
+      pi_handle{pi_handle}, tty{tty} {
     if constexpr (cc::log_errors) if (this->handle < 0) {
       std::cerr << log_error_prefix
-        << "opening serial device on "
-        << "Pi " << pi_handle
-        << ", file " << tty
+        << "opening " << tty
+        << " on Pi " << pi_handle
         << ", baud rate " << baud_rate
         << ", flags " << flags
         << ": " << pigpio_error(this->handle) << std::endl;
     }
+    std::cout << "hey: " << tty << std::endl << this->tty << std::endl;
     //std::cout << "Serial constructed at " << this << std::endl;
   }
 
@@ -110,8 +112,9 @@ struct Serial {
     if (this->handle >= 0) {
       int const response{serial_close(this->pi_handle, this->handle)};
       if constexpr (cc::log_errors) if (response < 0) std::cerr
-        << log_error_prefix << "closing serial device on "
-        << "Pi " << pi_handle
+        << log_error_prefix
+        << "closing " << this->tty
+        << " on Pi " << this->pi_handle
         << ": " << pigpio_error(response) << std::endl;
     }
     //std::cout << "Serial destructed at " << this << std::endl;
@@ -228,85 +231,121 @@ std::optional<bool> get_flag(
     : std::optional<bool>{};
 };
 
+// Wrapper for the pigpio function of the same name (without leading underscore)
+int _serial_data_available(Serial const &serial) {
+  int const response{serial_data_available(serial.pi_handle, serial)};
+  if constexpr (cc::log_errors) if (response < 0) std::cerr << log_error_prefix
+    << "querying " << serial.tty
+    << " on Pi " << serial.pi_handle
+    << ": " << pigpio_error(response) << std::endl;
+  return response;
+}
+
+// Wrapper for the pigpio function of the same name (without leading underscore)
+int _serial_read_byte(Serial const &serial) {
+  int const response{serial_read_byte(serial.pi_handle, serial)};
+  if constexpr (cc::log_errors) if (response < 0) std::cerr << log_error_prefix
+    << "reading byte from " << serial.tty
+    << " on Pi " << serial.pi_handle
+    << ": " << pigpio_error(response) << std::endl;
+  return response;
+}
+
+// Wrapper for the pigpio function of the same name (without leading underscore)
+int _serial_read(Serial const &serial, char * const buf, unsigned const count) {
+  int const response{serial_read(serial.pi_handle, serial, buf, count)};
+  if constexpr (cc::log_errors) if (response < 0) std::cerr << log_error_prefix
+    << "reading from " << serial.tty
+    << " on Pi " << serial.pi_handle
+    << ": " << pigpio_error(response) << std::endl;
+  return response;
+}
+
+// Wrapper for the pigpio function of the same name (without leading underscore)
+int _serial_write(Serial const &serial, char * const buf,
+    unsigned const count) {
+  int const response{serial_write(serial.pi_handle, serial, buf, count)};
+  if constexpr (cc::log_errors) if (response < 0) std::cerr << log_error_prefix
+    << "writing to " << serial.tty
+    << " on Pi " << serial.pi_handle
+    << ": " << pigpio_error(response) << std::endl;
+  return response;
+}
+
 // Empties all bytes buffered for reading from the given serial port
 int serial_flush(Serial const &serial) {
-  int const response{serial_data_available(serial.pi_handle, serial)};
-  if (response < 0) return response; // TODO: Error reporting to stderr
-  for (int i{0}; i < response; ++i) {
-    int const response{serial_read_byte(serial.pi_handle, serial)};
-    if (response < 0) return response; // TODO: Error reporting to stderr
-  }
+  int const response{_serial_data_available(serial)};
+  for (int i{0}; i < response; ++i) _serial_read_byte(serial);
   return response;
 }
 
 // Checks periodically until requested byte count is available and then reads
 template <class Rep0, class Period0, class Rep1, class Period1>
 int serial_wait_read(Serial const &serial, char * const buf,
-    unsigned const count,
-    std::chrono::duration<Rep0, Period0> const timeout =
-      std::chrono::milliseconds{100},
-    std::chrono::duration<Rep1, Period1> const interval =
-      std::chrono::milliseconds{10}) {
+    unsigned const count, std::chrono::duration<Rep0, Period0> const &timeout,
+    std::chrono::duration<Rep1, Period1> const &interval) {
   std::size_t const
     max_intervals_to_wait{static_cast<std::size_t>(timeout / interval)};
   for (std::size_t i{0}; i < max_intervals_to_wait; ++i) {
-    int const response{serial_data_available(serial.pi_handle, serial)};
-    if (response < 0) return response;
+    int const response{_serial_data_available(serial)};
     if (response >= static_cast<int>(count))
-      return serial_read(serial.pi_handle, serial, buf, count);
+      return _serial_read(serial, buf, count);
     std::this_thread::sleep_for(interval);
+  }
+
+  if constexpr (cc::log_errors) {
+    using T = double;
+    T const timeout_in_seconds{static_cast<T>(timeout.count()) *
+      static_cast<T>(Period0::num) / static_cast<T>(Period0::den)};
+    std::cerr << log_error_prefix
+      << "reading from " << serial.tty
+      << " on Pi " << serial.pi_handle
+      << ": " << "timeout after " << max_intervals_to_wait
+      << " retries in " << timeout_in_seconds << " second(s)" << std::endl;
   }
   return 0;
 }
 
-template <typename T>
-char mhz19_checksum(T const packet) {
+char mhz19_checksum(auto const packet) {
   char checksum{0x00};
   for(std::size_t i{1}; i < 8; ++i) checksum += packet[i];
   return (0xff - checksum) + 0x01;
 }
 
-template <typename T>
-int mhz19_send(Serial const &serial, T const packet) {
+int mhz19_send(Serial const &serial, auto const packet) {
   std::array<char, 9> buf{{packet[0], packet[1], packet[2], packet[3],
     packet[4], packet[5], packet[6], packet[7], mhz19_checksum(packet)}};
-  int const response{serial_write(serial.pi_handle, serial, buf.data(), 9u)};
-  if constexpr (cc::log_errors) if (response < 0) std::cerr
-    << log_error_prefix << "sending packet to MH-Z19 on "
-    << "Pi " << serial.pi_handle
-    << ", serial " << serial.handle
-    << ": " << pigpio_error(response) << std::endl;
-  return response;
+  return _serial_write(serial, buf.data(), buf.size());
 }
 
-std::optional<std::array<std::uint8_t, 8>> mhz19_receive(
-    Serial const &serial) {
-  std::chrono::milliseconds constexpr timeout{100};
-  std::chrono::milliseconds constexpr interval{10};
-
+template <typename Rep0 = decltype(cc::mhz19_receive_timeout_default)::rep,
+  typename Period0 = decltype(cc::mhz19_receive_timeout_default)::period,
+  typename Rep1 = decltype(cc::mhz19_receive_interval_default)::rep,
+  typename Period1 = decltype(cc::mhz19_receive_interval_default)::period>
+std::optional<std::array<std::uint8_t, 8>> mhz19_receive(Serial const &serial,
+    std::chrono::duration<Rep0, Period0> const &timeout =
+      cc::mhz19_receive_timeout_default,
+    std::chrono::duration<Rep1, Period1> const &interval =
+      cc::mhz19_receive_interval_default) {
   std::array<char, 9> buf{};
   int const response{
-    serial_wait_read(serial, buf.data(), 9u, timeout, interval)};
-  if (response < 9) {
-    if constexpr (cc::log_errors) {
-      std::cerr << log_error_prefix
-        << "receiving packet from MH-Z19 on "
-        << "Pi " << serial.pi_handle
-        << ", serial " << serial.handle
-        << ": ";
-      if (response < 0) std::cerr << pigpio_error(response);
-      else std::cerr << "expected to read 9 bytes, got " << response;
-      std::cerr << std::endl;
-    }
+    serial_wait_read(serial, buf.data(), buf.size(), timeout, interval)};
+  if (response >= 0 and response < buf.size()) {
+    if constexpr (cc::log_errors) std::cerr << log_error_prefix
+      << "receiving packet from MH-Z19 via " << serial.tty
+      << " on Pi " << serial.pi_handle
+      << ": expected to read 9 bytes, got " << response << std::endl;
     return {};
   }
 
-  // If the checksum doesn't match, don't output an error
-  if (buf[8] != mhz19_checksum(buf)) return {};
+  if (buf[8] != mhz19_checksum(buf)) {
+    if constexpr (cc::log_info) std::cerr << log_info_prefix
+      << "wrong checksum in packet from MH-Z19 via " << serial.tty
+      << " on Pi " << serial.pi_handle << std::endl;
+    return {};
+  }
 
-  std::array<std::uint8_t, 8> packet{{buf[0], buf[1], buf[2], buf[3], buf[4],
-    buf[5], buf[6], buf[7]}};
-  return {packet};
+  return {{{buf[0], buf[1], buf[2], buf[3], buf[4], buf[5], buf[6], buf[7]}}};
 }
 
 std::thread lpd433_send_oneshot(auto const &pi, int const gpio_index,

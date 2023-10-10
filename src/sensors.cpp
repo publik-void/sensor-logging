@@ -195,8 +195,14 @@ namespace sensors {
 
   mhz19 sample_mhz19(auto const &clock, auto const &serial) {
     // Resources on this sensor (MH-Z19, MH-Z19B, MH-Z19C):
-    // https://revspace.nl/MHZ19
-    // https://habr.com/ru/articles/401363/
+    // revspace.nl/MHZ19
+    // habr.com/ru/articles/401363
+    // emariete.com/en/sensor-co2-mh-z19b
+    // winsen-sensor.com/co2-sensor
+    // github.com/WifWaf/MH-Z19/blob/master#a-bit-about-the-sensor
+    // github.com/UedaTakeyuki/mh-z19
+    // (this last one is a Python package that's also available on PyPi and can
+    // be useful for testing/configuring the sensor and with its source code)
     //
     // Regarding the calibration of this sensor: As the documentation is so
     // spread out among bad data sheets and experiments recorded in blog posts
@@ -235,10 +241,10 @@ namespace sensors {
     std::array<char, 8> constexpr cmd_read{{byte_start, byte_sensor_number,
       0x86, 0x00, 0x00, 0x00, 0x00, 0x00}};
 
-    serial_flush(serial);
-    int const response{mhz19_send(serial, cmd_read)};
+    io::serial_flush(serial);
+    int const response{io::mhz19_send(serial, cmd_read)};
     if (response >= 0) {
-      auto const maybe_packet{mhz19_receive(serial)};
+      auto const maybe_packet{io::mhz19_receive(serial)};
       if (maybe_packet.has_value()) {
         auto const packet{maybe_packet.value()};
         float const co2_concentration{static_cast<float>(
