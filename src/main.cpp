@@ -266,7 +266,8 @@ int main(int const argc, char const * const argv[]) {
   std::vector<std::string> const args{argv, argv + argc};
 
   if constexpr (cc::log_info) {
-    log_info_prefix = args.front() + ": " + cc::log_info_string.data() + ": ";
+    log_info_prefix =
+      "# " + args.front() + ": " + cc::log_info_string.data() + ": ";
     std::cerr << log_info_prefix
       << "Info logging to stderr enabled.\n" << log_info_prefix
       << "Error logging to stderr " << (cc::log_errors ? "en" : "dis")
@@ -276,9 +277,8 @@ int main(int const argc, char const * const argv[]) {
       << "`NDEBUG` " << not_str << "defined, meaning this is probably "
       << not_str << "a release build." << std::endl;
   }
-  if constexpr (cc::log_errors)
-    log_error_prefix = args.front() + ": " + cc::log_error_string.data() + ": ";
-
+  if constexpr (cc::log_errors) log_error_prefix =
+    "# " + args.front() + ": " + cc::log_error_string.data() + ": ";
 
   using key_t = std::string;
   using flag_t = bool;
