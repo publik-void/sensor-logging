@@ -120,13 +120,16 @@ namespace cc {
 
   using sensors_tuple_t_lasse_raspberrypi_0 = std::tuple<
     sensors::sensorhub,
-    sensors::dht22>;
+    sensors::dht22,
+    sensors::mhz19>;
   auto constexpr sensors_physical_instance_names_lasse_raspberrypi_0{
     std::to_array({"sensorhub_0",
-                   "dht22_0"})};
+                   "dht22_0",
+                   "mhz19_1"})};
   auto constexpr sensors_io_setup_args_lasse_raspberrypi_0{std::make_tuple(
     std::make_tuple(0x1u, 0x17u),
-    std::make_tuple(4, DHTXX))};
+    std::make_tuple(17, DHTXX),
+    std::make_tuple(const_cast<char *>("/dev/serial0"), 9600u))};
   std::optional<int> constexpr
     lpd433_receiver_gpio_index_lasse_raspberrypi_0{},
     lpd433_transmitter_gpio_index_lasse_raspberrypi_0{},
