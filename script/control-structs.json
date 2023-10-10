@@ -9,10 +9,10 @@
           "code_off": 4474196,
           "code_on": 4474193,
           "n_bits": 24,
-          "intercode_gap": 9950,
+          "intercode_gap": 9975,
           "pulse_length_short": 300,
-          "pulse_length_long": 900,
-          "buzz_f_hertz": 500
+          "pulse_length_long": 980,
+          "buzz_f_hertz": 2000
         }
       },
       {
@@ -20,12 +20,12 @@
         "type": "bool",
         "default": "false",
         "lpd433": {
-          "code_off": 123,
-          "code_on": 789,
+          "code_off": 4477268,
+          "code_on": 4477265,
           "n_bits": 24,
-          "intercode_gap": 9950,
+          "intercode_gap": 9975,
           "pulse_length_short": 300,
-          "pulse_length_long": 900
+          "pulse_length_long": 980
         }
       },
       {

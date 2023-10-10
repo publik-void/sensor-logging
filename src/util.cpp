@@ -149,20 +149,29 @@ namespace util {
       "reached end-of-file" :
     "unknown error"; }};
 
-  auto const safe_exists{[](
+  auto const safe_openable{[](
       std::filesystem::path const &path_file){
     try {
-      if (std::filesystem::exists(path_file)) {
+      auto const type{std::filesystem::status(path_file).type()};
+      if (type == std::filesystem::file_type::regular) {
         if constexpr (cc::log_errors) std::cerr << log_error_prefix
           << path_file << " already exists." << std::endl;
-        return true;
+        return false;
+      }
+      if (type != std::filesystem::file_type::not_found and
+          type != std::filesystem::file_type::character and
+          type != std::filesystem::file_type::fifo) {
+        if constexpr (cc::log_errors) std::cerr << log_error_prefix
+          << path_file << " is either of the wrong type or its nonexistence "
+            "or type could not be verified." << std::endl;
+        return false;
       }
     } catch (std::filesystem::filesystem_error const &e) {
       if constexpr (cc::log_errors) std::cerr << log_error_prefix <<
         e.what() << std::endl;
-      return true;
+      return false;
     }
-    return false;
+    return true;
   }};
 
   auto const safe_is_directory{[](std::filesystem::path const &path_dir){

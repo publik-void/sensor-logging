@@ -99,11 +99,11 @@ struct Serial {
         << ", flags " << flags
         << ": " << pigpio_error(this->handle) << std::endl;
     }
-    std::cout << "hey: " << tty << std::endl << this->tty << std::endl;
     //std::cout << "Serial constructed at " << this << std::endl;
   }
 
-  Serial(Serial&& that) : handle{that.handle}, pi_handle{that.pi_handle} {
+  Serial(Serial&& that) : handle{that.handle}, pi_handle{that.pi_handle},
+      tty{std::move(that.tty)}{
     that.handle = PI_BAD_HANDLE;
     //std::cout << "Serial moved from " << &that << " to " << this << std::endl;
   }
@@ -275,13 +275,20 @@ int _serial_write(Serial const &serial, char * const buf,
 // Empties all bytes buffered for reading from the given serial port
 int serial_flush(Serial const &serial) {
   int const response{_serial_data_available(serial)};
-  for (int i{0}; i < response; ++i) _serial_read_byte(serial);
+  bool success{true};
+  for (int i{0}; i < response; ++i) {
+    int const response{_serial_read_byte(serial)};
+    if (response < 0) success = false;
+  }
+  if constexpr (cc::log_info) if (response > 0 and success) std::cerr
+    << log_info_prefix << "successfully flushed " << response << " bytes from "
+    << serial.tty << std::endl;
   return response;
 }
 
 // Checks periodically until requested byte count is available and then reads
 template <class Rep0, class Period0, class Rep1, class Period1>
-int serial_wait_read(Serial const &serial, char * const buf,
+std::optional<int> serial_wait_read(Serial const &serial, char * const buf,
     unsigned const count, std::chrono::duration<Rep0, Period0> const &timeout,
     std::chrono::duration<Rep1, Period1> const &interval) {
   std::size_t const
@@ -301,9 +308,9 @@ int serial_wait_read(Serial const &serial, char * const buf,
       << "reading from " << serial.tty
       << " on Pi " << serial.pi_handle
       << ": " << "timeout after " << max_intervals_to_wait
-      << " retries in " << timeout_in_seconds << " second(s)" << std::endl;
+      << " retries in " << timeout_in_seconds << "s" << std::endl;
   }
-  return 0;
+  return {};
 }
 
 char mhz19_checksum(auto const packet) {
@@ -328,9 +335,15 @@ std::optional<std::array<std::uint8_t, 8>> mhz19_receive(Serial const &serial,
     std::chrono::duration<Rep1, Period1> const &interval =
       cc::mhz19_receive_interval_default) {
   std::array<char, 9> buf{};
-  int const response{
+  auto const response_opt{
     serial_wait_read(serial, buf.data(), buf.size(), timeout, interval)};
-  if (response >= 0 and response < buf.size()) {
+
+  if (not response_opt.has_value()) return {};
+  auto const response{response_opt.value()};
+
+  if (response < 0) return {};
+
+  if (response >= 0 and response < static_cast<int>(buf.size())) {
     if constexpr (cc::log_errors) std::cerr << log_error_prefix
       << "receiving packet from MH-Z19 via " << serial.tty
       << " on Pi " << serial.pi_handle

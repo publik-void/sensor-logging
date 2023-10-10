@@ -4,6 +4,48 @@ Lasse Schlör
 This readme file needs to be updated. I am leaving this text here as a
 placeholder instead of the previous out-of-date text.
 
+== Setup
+
+To build:
+[source, sh]
+----
+mkdir build && cd build
+
+# Ninja build system is not needed, just omit the option to use GNU Make.
+# Change `Debug` to desired build type or omit for `Release`.
+cmake .. -G Ninja -DCMAKE_BUILD_TYPE=Debug && cd..
+
+# Clearing screen helps while developing but is of course not necessary.
+clear && ninja -C build
+----
+
+Make sure the following folders exist:
+[source, sh]
+----
+mkdir -p data/shortly data/daily logs/daily
+----
+
+Sensors that use the serial port need it to be enabled and the serial console to
+be disabled. It seems the `serial-getty` service is not always disabled – this
+can be done with:
+[source, sh]
+----
+# Example for `/dev/serial0`
+sudo systemctl stop serial-getty@serial0.service
+sudo systemctl disable serial-getty@serial0.service
+----
+
+Configuration is done via source code editing and recompiling, specifically in
+the following places:
+* a section of `namespace cc` in `src/main.cpp`
+* the overloaded function `control_tick` in `src/control.cpp`
+* `script/control-structs.json`
+
+Sample `crontab` entries:
+----
+# (TODO)
+----
+
 == To-do list
 
 * Think about safety and robustness in terms of power outages

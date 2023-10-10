@@ -62,8 +62,8 @@ namespace cc {
   float constexpr buzz_f_hertz_default{1000.f};
   float constexpr buzz_pulse_width_default{.1f};
 
-  std::chrono::milliseconds constexpr mhz19_receive_timeout_default{1000};
-  std::chrono::milliseconds constexpr mhz19_receive_interval_default{50};
+  std::chrono::milliseconds constexpr mhz19_receive_timeout_default{500};
+  std::chrono::milliseconds constexpr mhz19_receive_interval_default{10};
 
   std::string_view constexpr basename_dir_data{"data"};
   std::string_view constexpr basename_dir_shortly{"shortly"};
@@ -781,7 +781,7 @@ int main(int const argc, char const * const argv[]) {
           std::filesystem::path const basename_file{filename_prefix +
             "-" + name + "." + sensors::write_format_ext(write_format)};
           auto const path_file{dirname_file / basename_file};
-          if (util::safe_exists(path_file))
+          if (not util::safe_openable(path_file))
             { error_during_resource_allocation = true; return; }
 
           if (not util::safe_open(fs, path_file, std::ios::out))
@@ -798,7 +798,7 @@ int main(int const argc, char const * const argv[]) {
     // Open file for writing environment control output
     if (opts["write-control"].has_value()) {
       std::filesystem::path path_file{opts["write-control"].value()};
-      if (util::safe_exists(path_file))
+      if (not util::safe_openable(path_file))
         { close_files(); return cc::exit_code_error; }
       if (not util::safe_open(control_file_stream, path_file, std::ios::out))
         { close_files(); return cc::exit_code_error; }
