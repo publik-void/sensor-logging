@@ -106,7 +106,7 @@ std::string main_mode_name(MainMode const &mode) {
 namespace cc {
 
   // NOTE: `std::unordered_map`'s implementation is not `constexpr`-friendly,
-  // so that's why this is only makred `const`. I believe it doesn't matter.
+  // so that's why this is only marked `const`. I believe it doesn't matter.
   std::unordered_map<MainMode, sensors::WriteFormat> const
     write_format_defaults{
       {MainMode::help          , sensors::WriteFormat::csv },
