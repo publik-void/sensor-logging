@@ -30,7 +30,7 @@ namespace cc {
 
   std::chrono::milliseconds constexpr sampling_interval{3000};
   unsigned constexpr samples_per_aggregate{5u};
-  unsigned constexpr aggregates_per_run{3u/*60u*/};
+  unsigned constexpr aggregates_per_run{3600u/*60u*/};
 
   using timestamp_duration_t = std::chrono::milliseconds;
   int constexpr timestamp_width{10};
@@ -694,6 +694,8 @@ int main(int const argc, char const * const argv[]) {
     }
     auto const &setting{*(arg_itr++)};
 
+    // TODO: Extend this with further subcommands for timed triggering.
+
     auto const var_opt{control::lpd433_control_variable_parse(variable)};
     if (not var_opt.has_value()) return cc::exit_code_error;
 
@@ -703,6 +705,7 @@ int main(int const argc, char const * const argv[]) {
     io::Pi const pi{};
     if (io::errored(pi)) return cc::exit_code_error;
 
+    // TODO: If a serialized control state exists, update it.
     control::set_lpd433_control_variable(pi, var_opt.value(), to_opt.value());
 
   } else if (main_mode == MainMode::shortly) {

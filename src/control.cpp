@@ -167,6 +167,53 @@ namespace control {
       int const var, auto const &to) {
     return {};
   }
+
+  template <typename var, typename time = float>
+  inline std::optional<bool> threshold_controller_tick(
+      time const &sampling_interval, var const &input, bool const target,
+      var const &threshold_baseline, var const &threshold_gap,
+      bool const active_region_is_above, bool const active_state_is_on,
+      bool const manual_override = false,
+      time * const hold_time_counter = nullptr,
+      time const &hold_time_inactive_min = static_cast<time>(0.f),
+      time const &hold_time_inactive_max =
+        std::numeric_limits<time>::infinity(),
+      std::optional<time> const &hold_time_inactive_override = nullptr,
+      time const &hold_time_active_min = static_cast<time>(0.f),
+      time const &hold_time_active_max = std::numeric_limits<time>::infinity(),
+      std::optional<time> const &hold_time_active_override = nullptr) {
+    bool const has_hold_time_counter{hold_time_counter != nullptr};
+    if (has_hold_time_counter) *hold_time_counter += sampling_interval;
+
+    bool const is_active{target == active_state_is_on};
+    time const &hold_time_min{is_active
+      ? hold_time_active_min : hold_time_inactive_min};
+    time const &hold_time_max{is_active
+      ? hold_time_active_max : hold_time_inactive_max};
+    std::optional<time> const &hold_time_override{is_active
+      ? hold_time_active_override : hold_time_inactive_override};
+    var const activating_threshold{threshold_baseline};
+    var const deactivating_threshold{threshold_baseline +
+      (active_region_is_above ? -threshold_gap : threshold_gap)};
+    var const threshold{is_active
+      ? deactivating_threshold : activating_threshold};
+    bool const current_region_is_below{is_active != active_region_is_above};
+
+    // If a manual override happened, set new hold time if applicable and return
+    // immediately, so that the target stays in its state for at least 1 sample
+    if (manual_override) {
+      if (has_hold_time_counter and hold_time_override.has_value())
+        *hold_time_counter = hold_time_min - hold_time_override.value();
+      return {};
+    }
+
+    if ((((input > threshold) == current_region_is_below) and
+          (not has_hold_time_counter or (*hold_time_counter > hold_time_min)))
+        or (has_hold_time_counter and *hold_time_counter > hold_time_max)){
+      if (has_hold_time_counter) *hold_time_counter = static_cast<time>(0.f);
+      return not target;
+    } else return {};
+  }
 } // namespace control
 
 #include "control.generated.cpp"
@@ -190,6 +237,7 @@ namespace control {
   // `control_tick` on the respective state and parameter types. It's the case
   // anyway that the `sensor-logging` binary is meant to be configured by
   // hard-coding and compiling.
+  // Edit: Well, in the end I ended up with a bunch of generated code after all.
 
   auto control_tick(control_state_base const &state,
       control_params_base const &, auto const &, auto const &,
@@ -210,10 +258,18 @@ namespace control {
 
     control_state_lasse_raspberrypi_1 succ{state};
 
+    auto const sensor_update{update_from_sensors(xs, succ, params)};
     auto const lpd433_update{
       update_from_lpd433(pi, lpd433_receiver_opt, succ, sampling_interval)};
+    std::vector<std::tuple<lpd433_control_variable_lasse_raspberrypi_1, bool,
+      std::optional<float>>> overrides{/*TODO: timer updates*/};
+    if (lpd433_update.has_value()) overrides.emplace_back(
+      lpd433_update.value().first, lpd433_update.value().second,
+      std::optional<float>{});
+    threshold_controller_tick(pi, sampling_interval, succ, params, overrides);
 
-    auto const sensor_update{update_from_sensors(xs, succ)};
+    // <700ppm, >90%
+
 
     //set_ventilation(pi, succ, params, not succ.ventilation);
 

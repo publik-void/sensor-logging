@@ -1,66 +1,15 @@
-import os
-import json
-import textwrap
-
-def indent(str, n = 1, predicate = None):
-  return textwrap.indent(str, "  " * n, predicate)
-
-# def expand(sensors):
-#   "Bring JSON spec into a canonical form"
-#   for sensor_name, sensor_params in sensors.items():
-#     for field_name, field_params in sensor_params.items():
-#       if isinstance(field_params["aggregate"], str):
-#         field_params["aggregate"] = {
-#           "type": field_params["aggregate"], "unless": []}
-#   return sensors
+from common import (indent, write_generated_cpp_file, header_sep,
+  load_and_expand_jsons, dedent)
 
 def snippet_bool_as_csv_string():
-  return textwrap.dedent('''\
+  return dedent('''\
     std::string bool_as_csv_string(bool const x) {
       return std::string{x ? "1" : "0"};
     }
     ''')
 
-# def snippet_struct_sensor():
-#   return textwrap.dedent('''\
-#     struct sensor {
-#       std::optional<cc::timestamp_duration_t> timestamp{};
-#     };
-#     ''')
-
-# def snippet_struct_sensor_state():
-#   return textwrap.dedent('''\
-#     struct sensor_state {
-#       unsigned timestamp_count{0u};
-#     };
-#     ''')
-
-# def snippet_optional_apply():
-#   return textwrap.dedent('''\
-#     // NOTE: `optional_apply` could perhaps be defined as a variadic template
-#     // and function, but let's keep it simple for now.
-#
-#     template<class F, class T>
-#     std::optional<T> optional_apply(F f, std::optional<T> const &x0) {
-#       if (x0.has_value()) return std::optional<T>{f(x0.value())};
-#       else return std::optional<T>{};
-#     }
-#
-#     template<class F, class T>
-#     std::optional<T> optional_apply(F f,
-#         std::optional<T> const &x0, std::optional<T> const &x1) {
-#       if (x0.has_value()) {
-#         if (x1.has_value()) return std::optional<T>{f(x0.value(), x1.value())};
-#         else return std::optional<T>{x0};
-#       } else {
-#         if (x1.has_value()) return std::optional<T>{x1};
-#         else return std::optional<T>{};
-#       }
-#     }
-#     ''')
-
 def snippet_aggregation_step_ops():
-  return textwrap.dedent('''\
+  return dedent('''\
     auto constexpr aggregation_step_mean{
       [](auto const &x0, auto const &x1){ return x0 + x1; }};
     auto constexpr aggregation_step_min{
@@ -70,38 +19,6 @@ def snippet_aggregation_step_ops():
     auto constexpr aggregation_step_first{
       [](auto const &x0, auto const &){ return x0; }};
     ''')
-
-# def snippet_write_field():
-#   return textwrap.dedent('''\
-#     template<class T>
-#     std::ostream &write_field(std::ostream &out,
-#         T const &field, std::optional<int> const decimals) {
-#       if (decimals.has_value()) {
-#         out << std::setprecision(decimals.value()) << std::fixed;
-#       } else {
-#         out << std::setprecision(cc::field_decimals_default)
-#           << std::defaultfloat;
-#       }
-#       return out << field;
-#     }
-#
-#     template<class T>
-#     std::ostream &write_field(std::ostream &out,
-#         std::optional<T> const &field, std::optional<int> const decimals) {
-#       return field.has_value() ? write_field(out, field.value(), decimals)
-#                                : out;
-#     }
-#
-#     std::ostream &write_field(std::ostream &out,
-#         std::string const &field, std::optional<int> const) {
-#       return out << field;
-#     }
-#
-#     std::ostream &write_field(std::ostream &out,
-#         bool const &field, std::optional<int> const) {
-#       return out << (field ? "1" : "0");
-#     }
-#     ''')
 
 def snippet_struct(sensor_name, sensor_params):
   str = f'struct {sensor_name} '
@@ -123,14 +40,14 @@ def snippet_sensor_state(sensor_name, sensor_params):
   return str + f'}};\n'
 
 def snippet_init_state(sensor_name, sensor_params):
-  return textwrap.dedent(f'''\
+  return dedent(f'''\
     auto init_state({sensor_name} const &) {{
       return {sensor_name}_state{{}};
     }}
     ''')
 
 def snippet_setup_io(sensor_name, sensor_params):
-  return textwrap.dedent(f'''\
+  return dedent(f'''\
     auto setup_{sensor_name}_io(auto const &pi, auto const &);
 
     auto setup_io({sensor_name} const &, auto const &pi, auto const &args) {{
@@ -139,7 +56,7 @@ def snippet_setup_io(sensor_name, sensor_params):
     ''')
 
 def snippet_sample(sensor_name, sensor_params):
-  return textwrap.dedent(f'''\
+  return dedent(f'''\
     {sensor_name} sample_{sensor_name}(auto const &, auto const &);
 
     {sensor_name} sample('''
@@ -154,7 +71,7 @@ def snippet_aggregation_step(sensor_name, sensor_params):
   str += indent(f'{sensor_name}_state const state,\n', 2)
   str += indent(f'{sensor_name} const sample) {{\n', 2)
   if sensor_name != "sensor":
-    str += indent(textwrap.dedent(f'''\
+    str += indent(dedent(f'''\
       auto const [base_aggregate, base_state]{{
         aggregation_step(static_cast<sensor>(aggregate),
                          static_cast<sensor_state>(state),
@@ -189,7 +106,7 @@ def snippet_aggregation_finish(sensor_name, sensor_params):
   str += indent(f'{sensor_name} const aggregate,\n', 2)
   str += indent(f'{sensor_name}_state const state) {{\n', 2)
   if sensor_name != "sensor":
-    str += indent(textwrap.dedent(f'''\
+    str += indent(dedent(f'''\
       auto const base_aggregate{{
         aggregation_finish(static_cast<sensor>(aggregate),
                            static_cast<sensor_state>(state))}};\n'''))
@@ -225,26 +142,6 @@ def snippet_field_names(sensor_name, sensor_params):
     str += indent(f'\n{{"{field_name}"}},', 2)
   str += indent(f'\n}}}};\n')
   return str + f'}}\n'
-
-# def snippet_as_tuple(sensor_name, sensor_params):
-#   str = f'auto as_tuple({sensor_name} const data) {{\n'
-#   str += indent(f'return std::tuple{{\n')
-#   for field_name, field_params in sensor_params.items():
-#     str += indent(f'data.{field_name},\n', 2)
-#   str += indent(f'}};\n')
-#   return str + f'}}\n'
-
-# def snippet_field_decimals(sensor_name, sensor_params):
-#   str = f'auto field_decimals({sensor_name} const) {{\n'
-#   str += indent(f'return std::tuple{{\n')
-#   for field_name, field_params in sensor_params.items():
-#     if "decimals" in field_params:
-#       str += indent(
-#         f'std::optional<int>{{{field_params["decimals"]}}},\n', 2)
-#     else:
-#       str += indent(f'std::optional<int>{{}},\n', 2)
-#   str += indent(f'}};\n')
-#   return str + f'}}\n'
 
 def snippet_write_fields(sensor_name, sensor_params):
   str = (f'std::ostream &write_fields('
@@ -321,7 +218,7 @@ def snippet_write_fields(sensor_name, sensor_params):
 
 def snippet_write_field_names():
   def snippet(t, base_call):
-    return textwrap.dedent(f'''\
+    return dedent(f'''\
       std::ostream &write_field_names(std::ostream &out, {t} const &data,
           WriteFormat const wf = WriteFormat::csv,
           std::optional<std::string> const sensor_name_arg = {{}},
@@ -373,7 +270,7 @@ def snippet_write_field_names():
   str = snippet(t, base_call) + f'\n\n'
 
   t = f'auto'
-  base_call = indent(textwrap.dedent(f'''
+  base_call = indent(dedent(f'''
     write_field_names(out, static_cast<sensor>(data), wf,
       std::optional<std::string>(sensor_name), field_names_buffer.size() > 0);
     '''), 4)
@@ -381,28 +278,11 @@ def snippet_write_field_names():
   return str
 
 def sensors_include(sensors):
-  str = f''
-  sep = f'\n'
-
-  rel_file_path = os.path.relpath(__file__,
-    os.path.join(os.path.dirname(__file__), "..", "src"))
-  str += f'// File generated by `{rel_file_path}`\n' + sep
-
-  # includes = ["array", "string", "algorithm",
-    # "utility", "optional", "tuple", "ostream", "iomanip", "ios"]
-
-  # for include in includes:
-    # str += f'#include <{include}>\n'
-    # pass
-  # str += sep
+  str, sep = header_sep(__file__)
 
   str += f'namespace sensors {{\n' + sep
   str += indent(snippet_bool_as_csv_string() + sep)
-  # str += indent(snippet_struct_sensor() + sep)
-  # str += indent(snippet_struct_sensor_state() + sep)
-  # str += indent(snippet_optional_apply() + sep)
   str += indent(snippet_aggregation_step_ops() + sep)
-  # str += indent(snippet_write_field() + sep)
 
   base_sensor_params = {"timestamp": {
     "type": "cc::timestamp_duration_t",
@@ -422,44 +302,6 @@ def sensors_include(sensors):
 
   return str + f'}} // namespace sensors\n'
 
-sensors_json_filename = os.path.join(os.path.dirname(__file__), "sensors.json")
-control_structs_json_filename = os.path.join(os.path.dirname(__file__),
-  "control-structs.json")
-sensors_cpp_filename = os.path.join(os.path.dirname(__file__), "..", "src",
-  "sensors.generated.cpp")
+sensors, _ = load_and_expand_jsons()
+write_generated_cpp_file("sensors", sensors_include(sensors))
 
-with open(sensors_json_filename, "r") as f:
-  sensors = json.load(f)
-with open(control_structs_json_filename, "r") as f:
-  control_structs = json.load(f)
-
-# NOTE: This paragraph is duplicated (copy-pasted) code from
-# `generate-control-include.py`. Yes, not pretty. Make sure to keep in sync!
-for host_identifier, host_structs in control_structs.items():
-  for sensor_input in control_structs[host_identifier]["sensor_inputs"]:
-    sensor_name, variable_name = sensor_input["sensor"], sensor_input["name"]
-    sensor_field = sensors[sensor_name][variable_name]
-    control_structs[host_identifier]["struct_state"].append({
-      "name": sensor_input["sensor_physical_instance_name"] + "_" +
-        variable_name,
-      "type": sensor_field["type"],
-      "width": sensor_field["width"],
-      "decimals": sensor_field["decimals"],
-      "default": sensor_input["default"]})
-
-# sensors = expand(sensors)
-for host_identifier, structs in control_structs.items():
-  for type_identifier in ["state", "params"]:
-    sensor = {field["name"]: field
-      for field in structs[f'struct_{type_identifier}']}
-    for field_name, field_params in sensor.items():
-      if not "aggregate" in field_params:
-        field_params["aggregate"] = "first"
-    sensors[f'control_{type_identifier}_{host_identifier}'] = sensor
-
-sensors_include_str = sensors_include(sensors)
-
-with open(sensors_cpp_filename, "w") as f:
-  f.write(sensors_include_str)
-
-# print(sensors_include_str, end = "")
