@@ -1,11 +1,8 @@
-import os
-import json
-import textwrap
 import hashlib
 import base64
 
-def indent(str, n = 1, predicate = None):
-  return textwrap.indent(str, "  " * n, predicate)
+from common import (indent, write_generated_cpp_file, header_sep,
+  load_and_expand_jsons, dedent)
 
 def snippet_struct_declaration(host_identifier, struct_fields, type_identifier):
   str = (f'struct control_{type_identifier}_{host_identifier} : public '
@@ -22,16 +19,6 @@ def snippet_struct_declaration(host_identifier, struct_fields, type_identifier):
     f'{type_identifier}_{host_identifier}{{\n')
   str += indent(f'"{definition_hash}"}};\n')
   return str
-
-# def snippet_struct_field_names(host_identifier, struct_fields, type_identifier):
-#   str = f'std::array<std::string, {len(struct_fields)}> field_names(\n'
-#   str += indent(f'control_{type_identifier}_{host_identifier} '
-#     f'const &) {{\n', 2)
-#   str += indent(f'return {{{{\n')
-#   for field in struct_fields:
-#     str += indent(f'{{"{field["name"]}"}}\n', 2)
-#   str += indent(f'}}}};\n')
-#   return str + f'}}\n'
 
 def snippet_as_sensor(host_identifier, struct_fields, type_identifier):
   str = f'sensors::control_{type_identifier}_{host_identifier} as_sensor(\n'
@@ -101,34 +88,46 @@ def snippet_update_from_lpd433(host_identifier, host_structs):
     f'std::optional<io::LPD433Receiver> const &lpd433_receiver_opt,\n'
     f'{maybe_unused_str}control_state_{host_identifier} &state,\n'
     f'{maybe_unused_str}auto const &sampling_interval) {{\n', 2)
-  str += indent(textwrap.dedent(f'''\
+  str += indent(dedent(f'''\
     if (not lpd433_receiver_opt.has_value()) return {{}};
 
     auto const &lpd433_receiver{{lpd433_receiver_opt.value()}};
     bool const lpd433_receiver_ready{{_433D_rx_ready(lpd433_receiver) != 0}};
 
     '''))
+
   if has_ignore_time:
-    str += indent(textwrap.dedent(f'''\
+    str += indent(dedent(f'''\
       decltype(state.lpd433_ignore_time_counter) const zero{{0}};
       state.lpd433_ignore_time_counter -= sampling_interval;
-      if (state.lpd433_ignore_time_counter <= zero) {{
+      if (state.lpd433_ignore_time_counter <= zero)
         state.lpd433_ignore_time_counter = zero;
+
       '''))
-  else:
-    str += f'\n'
-  str += indent(textwrap.dedent(f'''\
+
+  str += indent(dedent(f'''\
     if (lpd433_receiver_ready) {{
-      bool recognized{{true}};
-      auto buzz_t_seconds{{cc::buzz_t_seconds_default}};
-      auto buzz_f_hertz{{cc::buzz_f_hertz_default}};
-      auto buzz_pulse_width{{cc::buzz_pulse_width_default}};
       _433D_rx_data_t data;
       _433D_rx_data(lpd433_receiver, &data);
-      lpd433_control_variable_{host_identifier} var;
-      bool to;
 
-    '''), 1 + has_ignore_time)
+    '''), 1)
+
+  if has_ignore_time:
+    str += indent(dedent(f'''\
+      if (state.lpd433_ignore_time_counter <= zero) {{
+      '''), 2)
+  else:
+    str += f'\n'
+
+  str += indent(dedent(f'''\
+    bool recognized{{true}};
+    auto buzz_t_seconds{{cc::buzz_t_seconds_default}};
+    auto buzz_f_hertz{{cc::buzz_f_hertz_default}};
+    auto buzz_pulse_width{{cc::buzz_pulse_width_default}};
+    lpd433_control_variable_{host_identifier} var;
+    bool to;
+
+    '''), 2 + has_ignore_time)
 
   if_branches_present = False
   is_first_entry = True
@@ -160,7 +159,7 @@ def snippet_update_from_lpd433(host_identifier, host_structs):
   str += indent(f'{" else " if if_branches_present else ""}recognized = false;'
     f'\n',
     (2 + has_ignore_time) if not if_branches_present else 0)
-  str += indent(textwrap.dedent(f'''
+  str += indent(dedent(f'''
         if (recognized) {{
           if constexpr (cc::buzzer_gpio_index.has_value())
             io::buzz_oneshot(pi, cc::buzzer_gpio_index.value(),
@@ -174,7 +173,7 @@ def snippet_update_from_lpd433(host_identifier, host_structs):
       '''), has_ignore_time + 1)
   if has_ignore_time:
     str += indent(f'}}\n')
-  str += indent(textwrap.dedent(f'''\
+  str += indent(dedent(f'''\
       return {{}};
     }}
     '''), 0)
@@ -182,7 +181,8 @@ def snippet_update_from_lpd433(host_identifier, host_structs):
 
 def snippet_update_from_sensors(host_identifier, host_structs):
   str = f'bool update_from_sensors(auto const &xs,\n'
-  str += indent(f'control_state_{host_identifier} &succ) {{\n', 2)
+  str += indent(f'control_state_{host_identifier} &succ,\n', 2)
+  str += indent(f'control_params_{host_identifier} const &params) {{\n', 2)
   str += indent(f'bool has_updated{{false}};\n')
   str += f'\n'
   for sensor_input in host_structs["sensor_inputs"]:
@@ -197,12 +197,12 @@ def snippet_update_from_sensors(host_identifier, host_structs):
     str += indent(f'{input_name}_opt.value();\n', 3)
     if "min" in sensor_input:
       str += indent(f'succ.{input_name} =\n', 2)
-      str += indent(f'std::max(succ.{input_name}, '
-        f'{sensor_input["min"]});\n', 3)
+      str += indent(f'std::max(succ.{input_name},\n', 3)
+      str += indent(f'params.{input_name}_min);\n', 4)
     if "max" in sensor_input:
       str += indent(f'succ.{input_name} =\n', 2)
-      str += indent(f'std::min(succ.{input_name}, '
-        f'{sensor_input["max"]});\n', 3)
+      str += indent(f'std::min(succ.{input_name},\n', 3)
+      str += indent(f'params.{input_name}_max);\n', 4)
     str += indent(f'has_updated = true;\n', 2)
     str += indent(f'}}\n', 1)
     str += f'\n'
@@ -273,7 +273,7 @@ def snippet_set_lpd433_control_variable_per_host(host_identifier, host_structs):
       if "lpd433" in field:
         host_qualifier = "" if with_state else f"_{host_identifier}"
         state_args = "state, params, " if with_state else ""
-        str += indent(textwrap.dedent(f'''\
+        str += indent(dedent(f'''\
           if (var == lpd433_control_variable_{host_identifier}::{field["name"]})
             return {{set_{field["name"]}{host_qualifier}(pi, {state_args}to)}};
           '''))
@@ -281,6 +281,66 @@ def snippet_set_lpd433_control_variable_per_host(host_identifier, host_structs):
     str += indent(f'return {{}};\n')
     str += f'}}\n'
   return str
+
+def snippet_threshold_controller_tick(host_identifier, host_structs):
+  str = f'void threshold_controller_tick(auto const &pi,\n'
+  str += indent(dedent(f'''\
+    float const sampling_interval, control_state_{host_identifier} &succ,
+    control_params_{host_identifier} const &params,
+    std::vector<std::tuple<lpd433_control_variable_{host_identifier}, bool,
+    '''), 2)
+  str += indent(f'std::optional<float>>> const overrides) {{\n', 3)
+  for threshold_spec in host_structs["thresholds"]:
+    str += indent(f'std::optional<std::pair<bool, std::optional<float>>>\n')
+    str += indent(f'override_{threshold_spec["target"]}{{}};\n', 2)
+  str += indent(f'for (auto &[var, to, hold_time_opt] : overrides) {{\n')
+  for threshold_spec in host_structs["thresholds"]:
+    str += indent(f'if (var == lpd433_control_variable_{host_identifier}'
+      f'::{threshold_spec["target"]})\n', 2)
+    str += indent(f'override_{threshold_spec["target"]} = '
+      f'{{to, hold_time_opt}};\n', 3)
+  str += indent(f'}}\n')
+  for threshold_spec in host_structs["thresholds"]:
+    target, variable = threshold_spec["target"], threshold_spec["variable"]
+    target_by_variable = f'{target}_by_{variable}'
+    str += f'\n'
+    str += indent(f'std::optional<bool> const update_{target}{{'
+      f'threshold_controller_tick(\n')
+    str += indent(dedent(f'''\
+      sampling_interval, succ.{variable},
+      succ.{target},
+      params.{target_by_variable}_threshold,
+      params.{target_by_variable}_threshold_gap,
+      params.{target_by_variable}_active_region_is_above,
+      params.{target_by_variable}_active_state_is_on,
+      override_{target}.has_value(),
+      &(succ.{target_by_variable}_hold_time_counter),
+      '''), 2)
+    for prefix in ["in", ""]:
+      if f"hold_time_{prefix}active_min" in threshold_spec:
+        str += indent(
+          f'{threshold_spec[f"hold_time_{prefix}active_min"]},\n', 2)
+      else:
+        str += indent(f'0.f,\n', 2)
+      if f"hold_time_{prefix}active_max" in threshold_spec:
+        str += indent(
+          f'{threshold_spec[f"hold_time_{prefix}active_max"]},\n', 2)
+      else:
+        str += indent(f'std::numeric_limits<float>::infinity(),\n', 2)
+      str += indent(f'override_{target}.has_value() and\n', 2)
+      str += indent(f'override_{target}.value().second.has_value()\n', 3)
+      str += indent(f'? std::optional<float>{{override_{target}.value().'
+        f'second.value()}}\n', 4)
+      if f"hold_time_{prefix}active_override" in threshold_spec:
+        str += indent(f': std::optional<float>{{'
+          f'{threshold_spec[f"hold_time_{prefix}active_override"]}}}', 4)
+      else:
+        str += indent(f': {{}}', 4)
+      str += f',\n' if prefix == "in" else f')}};\n'
+    str += indent(f'if (update_{target}.has_value())\n')
+    str += indent(
+      f'set_{target}(pi, succ, params, update_{target}.value());\n', 2)
+  return str + f'}}\n'
 
 def snippet_type_conditionals(control_structs, type_identifier):
   str = f'control_{type_identifier}_base'
@@ -317,7 +377,7 @@ def snippet_lpd433_control_variable_parse(control_structs):
   return str + f'}}\n'
 
 def snippet_set_lpd433_control_variable(control_structs):
-  return textwrap.dedent(f'''\
+  return dedent(f'''\
     // Placeholder for `snippet_set_lpd433_control_variable`, i.e. something
     // like `set_ventilation` without state args and without host qualifier in
     // the name, so that it dispatches to the `cc:host`. I'm not sure I need a
@@ -325,28 +385,11 @@ def snippet_set_lpd433_control_variable(control_structs):
     ''')
 
 def control_cpp_include(control_structs, sensors):
-  str = f''
-  sep = f'\n'
-
-  rel_file_path = os.path.relpath(__file__,
-    os.path.join(os.path.dirname(__file__), "..", "src"))
-  str += f'// File generated by `{rel_file_path}`\n' + sep
+  str, sep = header_sep(__file__)
 
   str += f'namespace control {{\n' + sep
 
   type_identifiers = ["state", "params"]
-
-  for host_identifier, host_structs in control_structs.items():
-    for sensor_input in control_structs[host_identifier]["sensor_inputs"]:
-      sensor_name, variable_name = sensor_input["sensor"], sensor_input["name"]
-      sensor_field = sensors[sensor_name][variable_name]
-      control_structs[host_identifier]["struct_state"].append({
-        "name": sensor_input["sensor_physical_instance_name"] + "_" +
-          variable_name,
-        "type": sensor_field["type"],
-        "width": sensor_field["width"],
-        "decimals": sensor_field["decimals"],
-        "default": sensor_input["default"]})
 
   # str += snippet_…() + sep
 
@@ -361,7 +404,8 @@ def control_cpp_include(control_structs, sensors):
       snippet_lpd433_control_variable_name,
       snippet_lpd433_control_variable_parse_per_host,
       snippet_update_from_lpd433, snippet_update_from_sensors,
-      snippet_set_lpd433_control_variable_per_host]:
+      snippet_set_lpd433_control_variable_per_host,
+      snippet_threshold_controller_tick]:
     for host_identifier, host_structs in control_structs.items():
       str += indent(snippet(host_identifier, host_structs) + sep)
 
@@ -375,20 +419,7 @@ def control_cpp_include(control_structs, sensors):
 
   return str + f'}} // namespace control\n'
 
-sensors_json_filename = os.path.join(os.path.dirname(__file__),
-  "sensors.json")
-control_structs_json_filename = os.path.join(os.path.dirname(__file__),
-  "control-structs.json")
-control_cpp_filename = os.path.join(os.path.dirname(__file__), "..", "src",
-  "control.generated.cpp")
-
-with open(sensors_json_filename, "r") as f:
-  sensors = json.load(f)
-with open(control_structs_json_filename, "r") as f:
-  control_structs = json.load(f)
-
-control_cpp_include_str = control_cpp_include(control_structs, sensors)
-
-with open(control_cpp_filename, "w") as f:
-  f.write(control_cpp_include_str)
+sensors, control_structs = load_and_expand_jsons()
+write_generated_cpp_file("control",
+  control_cpp_include(control_structs, sensors))
 

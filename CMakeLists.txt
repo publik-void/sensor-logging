@@ -75,19 +75,19 @@ add_custom_command(
   OUTPUT ${PROJECT_SOURCE_DIR}/src/machine.generated.cpp
   WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}
   COMMAND python3 script/generate-machine-include.py
-  DEPENDS script/generate-machine-include.py
+  DEPENDS script/common.py script/generate-machine-include.py
   COMMENT "Running `generate-machine-include.py`…")
 add_custom_command(
   OUTPUT ${PROJECT_SOURCE_DIR}/src/sensors.generated.cpp
   WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}
   COMMAND python3 script/generate-sensors-include.py
-  DEPENDS script/sensors.json script/control-structs.json script/generate-sensors-include.py
+  DEPENDS script/common.py script/sensors.json script/control-structs.json script/generate-sensors-include.py
   COMMENT "Running `generate-sensors-include.py`…")
 add_custom_command(
   OUTPUT ${PROJECT_SOURCE_DIR}/src/control.generated.cpp
   WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}
   COMMAND python3 script/generate-control-include.py
-  DEPENDS script/sensors.json script/control-structs.json script/generate-control-include.py
+  DEPENDS script/common.py script/sensors.json script/control-structs.json script/generate-control-include.py
   COMMENT "Running `generate-control-include.py`…")
 add_custom_target(generate-machine-include ALL
   DEPENDS ${PROJECT_SOURCE_DIR}/src/machine.generated.cpp)

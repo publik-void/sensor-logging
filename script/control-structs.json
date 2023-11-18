@@ -32,7 +32,7 @@
         "name": "lpd433_ignore_time_counter",
         "type": "float",
         "default": "0.f",
-        "width": 1,
+        "width": 2,
         "decimals": 1
       }
     ],
@@ -41,7 +41,7 @@
         "name": "lpd433_ignore_time",
         "type": "float",
         "default": "5.f",
-        "width": 1,
+        "width": 2,
         "decimals": 1
       }
     ],
@@ -61,6 +61,34 @@
         "default": "50.f",
         "min": "0.f",
         "max": "100.f"
+      }
+    ],
+    "thresholds" : [
+      {
+        "variable": "mhz19_0_co2_concentration",
+        "target": "ventilation",
+        "threshold": "700.f",
+        "threshold_gap": "50.f",
+        "active_region_is_above": true,
+        "active_state_is_on": true,
+        "hold_time_inactive_min": "300.f",
+        "hold_time_inactive_max": "86400.f",
+        "hold_time_inactive_override": "900.f",
+        "hold_time_active_min": "30.f",
+        "hold_time_active_max": "180.f",
+        "hold_time_active_override": "900.f"
+      },
+      {
+        "variable": "dht22_2_humidity",
+        "target": "humidification",
+        "threshold": "85.f",
+        "threshold_gap": "5.f",
+        "active_region_is_above": false,
+        "active_state_is_on": true,
+        "hold_time_inactive_min": "120.f",
+        "hold_time_inactive_override": "900.f",
+        "hold_time_active_min": "120.f",
+        "hold_time_active_override": "900.f"
       }
     ]
   }

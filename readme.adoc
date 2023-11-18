@@ -26,8 +26,8 @@ mkdir -p data/shortly data/daily logs/daily
 ----
 
 Sensors that use the serial port need it to be enabled and the serial console to
-be disabled. It seems the `serial-getty` service is not always disabled – this
-can be done with:
+be disabled. This can be done with `sudo raspi-config`. If nothing else helps,
+disable the `serial-getty` service:
 [source, sh]
 ----
 # Example for `/dev/serial0`
