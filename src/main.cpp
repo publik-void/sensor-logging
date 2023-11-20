@@ -134,9 +134,9 @@ namespace cc {
     std::make_tuple(17, DHTXX),
     std::make_tuple(const_cast<char *>("/dev/serial0"), 9600u))};
   std::optional<int> constexpr
-    lpd433_receiver_gpio_index_lasse_raspberrypi_0{},
-    lpd433_transmitter_gpio_index_lasse_raspberrypi_0{},
-    buzzer_gpio_index_lasse_raspberrypi_0{};
+    lpd433_receiver_gpio_index_lasse_raspberrypi_0{23},
+    lpd433_transmitter_gpio_index_lasse_raspberrypi_0{24},
+    buzzer_gpio_index_lasse_raspberrypi_0{26};
 
   using sensors_tuple_t_lasse_raspberrypi_1 = std::tuple<
     sensors::dht22,
