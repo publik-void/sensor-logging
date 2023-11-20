@@ -10,12 +10,12 @@ namespace io::toml {
     indent_t i;
     bool cond;
 
-    TOMLWrapper<T>(T &&x, std::optional<std::string> comment = {},
+    TOMLWrapper(T &&x, std::optional<std::string> comment = {},
         indent_t i = 0, bool cond = true) :
       x{x}, comment{comment}, i{i}, cond{cond} {}
 
     template <typename _T>
-    TOMLWrapper<T>(T &x, TOMLWrapper<_T> const &y,
+    TOMLWrapper(T &x, TOMLWrapper<_T> const &y,
         std::optional<std::string> comment = {}) :
       x{x}, comment{comment}, i{y.i}, cond{false} {}
   };
