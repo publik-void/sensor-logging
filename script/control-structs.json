@@ -1,4 +1,32 @@
 {
+  "lasse_raspberrypi_0": {
+    "struct_state": [
+      {
+        "name": "remote_2_switch_1",
+        "type": "bool",
+        "default": "false",
+        "lpd433": {
+          "code_off": 2924472832,
+          "code_on": 2790255104,
+          "n_bits": 32,
+          "intercode_gap": 7140,
+          "pulse_length_short": 625,
+          "pulse_length_long": 1250
+        }
+      }
+    ],
+    "struct_params": [
+      {
+        "name": "lpd433_ignore_time",
+        "type": "float",
+        "default": "5.f",
+        "width": 2,
+        "decimals": 1
+      }
+    ],
+    "sensor_inputs" : [],
+    "thresholds" : []
+  },
   "lasse_raspberrypi_1": {
     "struct_state": [
       {

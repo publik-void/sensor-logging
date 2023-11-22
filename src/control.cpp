@@ -239,8 +239,7 @@ namespace control {
   // hard-coding and compiling.
   // Edit: Well, in the end I ended up with a bunch of generated code after all.
 
-  auto control_tick(control_state_base const &state,
-      control_params_base const &, auto const &, auto const &,
+  auto control_tick(auto const &state, auto const &, auto const &, auto const &,
       std::optional<io::LPD433Receiver> const &) {
     return state;
   }
