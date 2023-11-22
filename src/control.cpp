@@ -135,6 +135,11 @@ namespace control {
       clock.now().time_since_epoch()));
   }
 
+  std::ostream& write_config_lpd433_control_variables(std::ostream& out,
+      control_state_base const &) {
+    return out;
+  }
+
   std::thread set_lpd433_control_variable(auto const &pi, bool const to,
       std::uint64_t const code_off, std::uint64_t const code_on,
       int const n_bits, int const n_repeats, int const intercode_gap,

@@ -54,6 +54,25 @@ def snippet_lpd433_control_variable_name(host_identifier, host_structs):
   str += indent(f'return {{""}};\n')
   return str + f'}}\n'
 
+def snippet_write_config_lpd433_control_variables(host_identifier, host_structs):
+  maybe_unused_str = ("" if
+    any("lpd433" in field for field in host_structs["struct_state"]) else
+    "[[maybe_unused]] ")
+  str = f'std::ostream& write_config_lpd433_control_variables(std::ostream& out,\n'
+  str += indent(f'{maybe_unused_str}control_state_{host_identifier} '
+    f'const &default_state) {{\n', 2)
+  for field in host_structs["struct_state"]:
+    if "lpd433" in field:
+      str += indent(f'out << "\\n" << '
+        f'"[lpd433_control_variables.{field["name"]}]\\n";\n')
+      pairs = field["lpd433"]
+      pairs["default"] = f'default_state.{field["name"]}'
+      for k, v in pairs.items():
+        str += indent(f'out << io::toml::TOMLWrapper{{std::make_pair(\n')
+        str += indent(f'"{k}", {v})}};\n', 2)
+  str += indent(f'return out;\n')
+  return str + f'}}\n'
+
 def snippet_lpd433_control_variable_parse_per_host(host_identifier, host_structs):
   maybe_unused_str = ("" if
     any("lpd433" in field for field in host_structs["struct_state"]) else
@@ -402,6 +421,7 @@ def control_cpp_include(control_structs, sensors):
 
   for snippet in [snippet_enum_lpd433_control_variable,
       snippet_lpd433_control_variable_name,
+      snippet_write_config_lpd433_control_variables,
       snippet_lpd433_control_variable_parse_per_host,
       snippet_update_from_lpd433, snippet_update_from_sensors,
       snippet_set_lpd433_control_variable_per_host,

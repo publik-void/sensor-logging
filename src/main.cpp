@@ -556,6 +556,8 @@ int main(int const argc, char const * const argv[]) {
             cc::lpd433_transmitter_gpio_index,
             cc::buzzer_gpio_index),
           std::make_tuple("lpd433_receiver", "lpd433_transmitter", "buzzer"));
+        control::write_config_lpd433_control_variables(out,
+          control::control_state{});
         out << std::flush;
       }
   } else if (main_mode == MainMode::lpd433_listen) {

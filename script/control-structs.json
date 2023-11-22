@@ -1,8 +1,23 @@
 {
   "lasse_raspberrypi_0": {
+    "comments" : [
+      "NOTE: I was not able to properly receive the codes for the newer Brennenstuhl switches, it seems. Maybe they use some other format than a single code?"],
     "struct_state": [
       {
-        "name": "remote_2_switch_1",
+        "name": "touchxel_0",
+        "type": "bool",
+        "default": "false",
+        "lpd433": {
+          "code_off": 2169498112,
+          "code_on": 2387601920,
+          "n_bits": 32,
+          "intercode_gap": 7140,
+          "pulse_length_short": 625,
+          "pulse_length_long": 1250
+        }
+      },
+      {
+        "name": "touchxel_1",
         "type": "bool",
         "default": "false",
         "lpd433": {
@@ -12,6 +27,59 @@
           "intercode_gap": 7140,
           "pulse_length_short": 625,
           "pulse_length_long": 1250
+        }
+      },
+      {
+        "name": "touchxel_2",
+        "type": "bool",
+        "default": "false",
+        "lpd433": {
+          "code_off": 2656037376,
+          "code_on": 2521819648,
+          "n_bits": 32,
+          "intercode_gap": 7140,
+          "pulse_length_short": 625,
+          "pulse_length_long": 1250
+        }
+      },
+      {
+        "name": "touchxel_3",
+        "type": "bool",
+        "default": "false",
+        "lpd433": {
+          "code_off": 2370824704,
+          "code_on": 2236606976,
+          "n_bits": 32,
+          "intercode_gap": 7140,
+          "pulse_length_short": 625,
+          "pulse_length_long": 1250
+        }
+      },
+      {
+        "name": "brennenstuhl_0",
+        "type": "bool",
+        "default": "false",
+        "lpd433": {
+          "code_off": 4474196,
+          "code_on": 4474193,
+          "n_bits": 24,
+          "intercode_gap": 9975,
+          "pulse_length_short": 300,
+          "pulse_length_long": 980,
+          "buzz_f_hertz": 2000
+        }
+      },
+      {
+        "name": "brennenstuhl_1",
+        "type": "bool",
+        "default": "false",
+        "lpd433": {
+          "code_off": 4477268,
+          "code_on": 4477265,
+          "n_bits": 24,
+          "intercode_gap": 9975,
+          "pulse_length_short": 300,
+          "pulse_length_long": 980
         }
       }
     ],
