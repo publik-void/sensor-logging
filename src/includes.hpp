@@ -32,14 +32,11 @@
 #include <type_traits>
 #include <stdexcept>
 
-// TODO: Replace `#include` directives with `import` statements. On Debian
-// Bullseye, which is still the basis for the current Raspberry Pi OS at the
-// time of writing this comment, the GCC (and standard Clang) version is too old
-// to support the use of modules. I could perhaps rely on backports or clang,
-// but I think I won't mess around with those options for now. but maybe I'll
-// update to Debian Bookworm when it is possible, which surely comes with a
-// newer GCC version.
-// NOTE: I will have to look at how precompiling headers works with modules.
+// NOTE: Since this code is supposed to run on a Raspberry Pi Zero, it must
+// support the GCC or Clang version of Raspberry Pi OS Bullseye, unless I want
+// to introduce an annoying dependency on a special installation of newer
+// compiler versions. Thus, I won't be able to use modules instead of `#include`
+// directives here.
 
 extern "C" {
   #include <pigpiod_if2.h>
