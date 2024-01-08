@@ -54,7 +54,7 @@ namespace control {
 
   void file_clear(std::filesystem::path const &path_file) {
     try {
-      if (exists(path_file)) {
+      if (std::filesystem::exists(path_file)) {
         std::filesystem::remove(path_file);
       }
     } catch (std::filesystem::filesystem_error const &e) {
@@ -66,7 +66,8 @@ namespace control {
 
   template <typename T>
   T deserialize_or(std::optional<std::filesystem::path> const &path_file_opt,
-      std::optional<std::string> const &description = {}, T const &val = T{}) {
+      std::optional<std::string> const &description = {}, T const &val = T{},
+      bool const clear = true) {
     auto const opt{[&](){
       if (path_file_opt.has_value())
         return safe_deserialize<T>(path_file_opt.value());
@@ -80,10 +81,23 @@ namespace control {
       << (opt.has_value() ? " succeeded." : " failed – using default.")
       << std::endl;
     if (opt.has_value()) {
-      file_clear(path_file_opt.value());
+      if (clear) file_clear(path_file_opt.value());
       return opt.value();
     }
     return val;
+  }
+
+  cc::timestamp_duration_t get_file_timestamp(
+      std::filesystem::path const &path_file) {
+    auto last_write_time{std::filesystem::last_write_time(path_file)};
+    // NOTE: Looks like `std::chrono::clock_cast` is not supported on these
+    // older compilers, so I'll have to depend on `high_resolution_clock` being
+    // the same as `system_clock` on the platforms I'm compiling this for.
+    // I could alternatively compute the number of seconds since the Unix time
+    // epoch manually.
+    auto last_write_time_sys{std::chrono::file_clock::to_sys(last_write_time)};
+    return std::chrono::duration_cast<cc::timestamp_duration_t>(
+      last_write_time_sys.time_since_epoch());
   }
 
   auto path_dir_hostname_get(auto const &path_base) {
@@ -226,12 +240,83 @@ namespace control {
 namespace control {
   auto path_file_control_state_get(auto const &path_base) {
     return ((path_dir_hostname_get(path_base) /
-      cc::basename_file_control_state) += "-") += hash_struct_control_state;
+        cc::basename_prefix_file_control_state) += "-") +=
+      hash_struct_control_state;
   }
 
   auto path_file_control_params_get(auto const &path_base) {
     return ((path_dir_hostname_get(path_base) /
-      cc::basename_file_control_params) += "-") += hash_struct_control_params;
+        cc::basename_prefix_file_control_params) += "-") +=
+      hash_struct_control_params;
+  }
+
+  auto path_dir_control_triggers_get(auto const &path_base) {
+    return ((path_dir_hostname_get(path_base) /
+        cc::basename_prefix_dir_control_triggers) += "-") +=
+      hash_lpd433_control_variable;
+  }
+
+  struct control_trigger {
+    lpd433_control_variable var;
+    bool to;
+    std::chrono::system_clock::time_point when;
+    bool daily;
+  };
+
+  auto when_gmtime(control_trigger const &self) {
+    auto const when_ctime{std::chrono::system_clock::to_time_t(self.when)};
+    return std::gmtime(&when_ctime);
+  }
+
+  template <std::size_t n>
+  std::string const when_strftime(control_trigger const &self,
+      std::string const &fmt) {
+    char buf[n + 1];
+    std::strftime(buf, sizeof(buf), fmt.c_str(), when_gmtime(self));
+    buf[n] = '\0';
+    return {buf};
+  }
+
+  std::string when_date(control_trigger const &self,
+      char const &sep = '-') {
+    return when_strftime<10>(self, std::string{"%Y"} + sep + "%m" + sep + "%d");
+  }
+
+  std::string when_time(control_trigger const &self,
+      char const &sep = ':') {
+    return when_strftime<8>(self, std::string{"%H"} + sep + "%M" + sep + "%S");
+  }
+
+  std::string basename(control_trigger const &self) {
+    return {(self.daily ? "daily-" : "single-") +
+      (self.daily ? std::string{""} : when_date(self) + "-") +
+      when_time(self, '-') + "Z-" + name(self.var) + "-" +
+      (self.to ? "on" : "off")};
+  }
+
+  return write(control_trigger const &self, auto const &path_base) {
+    if (util::safe_create_directory(path_dir_hostname_get(path_base))) {
+      auto const path_dir_control_triggers{
+        path_dir_control_triggers_get(path_base)};
+      if (util::safe_create_directory(path_dir_control_triggers)) {
+        auto const path_file{path_dir_control_triggers / basename(self)};
+        return safe_serialize<control_trigger>(self, path_file).has_value();
+      }
+    }
+    return false;
+  }
+
+  std::ostream& write_as_toml(std::ostream& out,
+      control_trigger const &trigger) {
+    out << "[[control_triggers_" << cc::hostname << "]]\n";
+    if (trigger.daily) out << io::toml::TOMLWrapper{std::make_pair("time",
+      io::toml::QuotelessWrapper{when_time(trigger) + "Z"})};
+    else out << io::toml::TOMLWrapper{std::make_pair("time",
+      io::toml::QuotelessWrapper{when_date(trigger) + " " + when_time(trigger) +
+        "Z"})};
+    out << io::toml::TOMLWrapper{std::make_pair("variable", name(trigger.var))};
+    out << io::toml::TOMLWrapper{std::make_pair("value", trigger.to)};
+    return out << "\n";
   }
 
   // NOTE: The code below could probably be written or even generated with all

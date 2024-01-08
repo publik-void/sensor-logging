@@ -1,11 +1,17 @@
 import textwrap
 import os
 import json
+import hashlib
+import base64
 
 def indent(str, n = 1, predicate = None):
   return textwrap.indent(str, "  " * n, predicate)
 
 dedent = textwrap.dedent
+
+def hash(str):
+  return base64.urlsafe_b64encode(hashlib.shake_128(str.encode(
+    "utf-8")).digest(12)).decode().replace("-", "+")
 
 def header_sep(file):
   sep = "\n"

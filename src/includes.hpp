@@ -5,6 +5,7 @@
 #include <iomanip>
 #include <string>
 #include <string_view>
+#include <sstream>
 #include <regex>
 #include <utility>
 #include <optional>

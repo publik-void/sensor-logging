@@ -1,8 +1,8 @@
-import hashlib
-import base64
-
 from common import (indent, write_generated_cpp_file, header_sep,
-  load_and_expand_jsons, dedent)
+  load_and_expand_jsons, dedent, hash)
+
+def snippet_enum_lpd433_control_variable_type_alias():
+  return f'using lpd433_control_variable_underlying_t = std::uint8_t;\n'
 
 def snippet_struct_declaration(host_identifier, struct_fields, type_identifier):
   str = (f'struct control_{type_identifier}_{host_identifier} : public '
@@ -10,14 +10,40 @@ def snippet_struct_declaration(host_identifier, struct_fields, type_identifier):
   for field in struct_fields:
     initializer = f'{{{field["default"]}}}' if "default" in field else ""
     str += indent(f'{field["type"]} {field["name"]}{initializer};\n')
+  str += f'\n'
+  str += indent(f'static std::unordered_map<std::string, '
+    f'std::optional<std::string>>\n')
+  str += indent(f'get_empty_opts() {{\n', 3)
+  str += indent(f'return {{\n', 2)
+  for field in struct_fields:
+    name_hyphenized = field["name"].replace("_", "-")
+    str += indent(f'{{{{"{name_hyphenized}"}}, {{}}}},\n', 3)
+  str += indent(f'}};\n', 2)
+  str += indent(f'}}\n')
   str += f'}};\n'
 
-  definition_hash = base64.urlsafe_b64encode(
-    hashlib.shake_128(str.encode("utf-8")).digest(12)).decode()
+  definition_hash = hash(str)
   str += f'\n'
   str += (f'std::string_view constexpr hash_struct_control_'
     f'{type_identifier}_{host_identifier}{{\n')
   str += indent(f'"{definition_hash}"}};\n')
+  return str
+
+def snippet_apply_opts(host_identifier, struct_fields, type_identifier):
+  str = f'control_{type_identifier}_{host_identifier} apply_opts(\n'
+  str += indent(f'std::unordered_map<std::string, std::optional<std::string>> '
+    f'&opts,\n', 2)
+  str += indent(f'control_{type_identifier}_{host_identifier} const '
+    f'&{type_identifier} = {{}}) {{\n', 2)
+  str += indent(f'return {{{{}},\n')
+  for field in struct_fields:
+    name_hyphenized = field["name"].replace("_", "-")
+    str += indent(
+      f'util::parse_arg_value(util::{field["type"]}_parser, opts,\n', 2)
+    str += indent(f'"{name_hyphenized}",\n', 3)
+    str += indent(f'{type_identifier}.{field["name"]}),\n', 3)
+  str += indent(f'}};\n')
+  str += f'}}\n'
   return str
 
 def snippet_as_sensor(host_identifier, struct_fields, type_identifier):
@@ -33,11 +59,21 @@ def snippet_as_sensor(host_identifier, struct_fields, type_identifier):
   return str + f'}}\n'
 
 def snippet_enum_lpd433_control_variable(host_identifier, host_structs):
-  str = f'enum struct lpd433_control_variable_{host_identifier} {{\n'
+  str = f'enum struct lpd433_control_variable_{host_identifier} :\n'
+  str += indent(f'lpd433_control_variable_underlying_t {{\n', 2)
+  i = 0
   for field in host_structs["struct_state"]:
     if "lpd433" in field:
-      str += indent(f'{field["name"]},\n')
-  return str + f'}};\n'
+      str += indent(f'{field["name"]} = {i},\n')
+      i += 1
+  str += f'}};\n'
+
+  definition_hash = hash(str)
+  str += f'\n'
+  str += (f'std::string_view constexpr hash_lpd433_control_variable_'
+    f'{host_identifier}{{\n')
+  str += indent(f'"{definition_hash}"}};\n')
+  return str
 
 def snippet_lpd433_control_variable_name(host_identifier, host_structs):
   maybe_unused_str = ("" if
@@ -361,22 +397,38 @@ def snippet_threshold_controller_tick(host_identifier, host_structs):
       f'set_{target}(pi, succ, params, update_{target}.value());\n', 2)
   return str + f'}}\n'
 
-def snippet_type_conditionals(control_structs, type_identifier):
-  str = f'control_{type_identifier}_base'
+def snippet_maker_type_conditionals(control_structs, name, default):
+  str = default
   for host_identifier, _ in reversed(control_structs.items()):
     str = (f'std::conditional<cc::host == cc::Host::{host_identifier},\n'
-      f'control_{type_identifier}_{host_identifier},\n'
+      f'{name}_{host_identifier},\n'
       f'{str}>::type')
-  return f'using control_{type_identifier} =\n' + indent(f'{str};\n')
+  return f'using {name} =\n' + indent(f'{str};\n')
 
-def snippet_hash_struct(control_structs, type_identifier):
+def snippet_maker_hashes(control_structs, name):
   str = f'std::string_view{{""}}'
   for host_identifier, _ in reversed(control_structs.items()):
     str = (f'cc::host == cc::Host::{host_identifier} ?\n'
-      f'hash_struct_control_{type_identifier}_{host_identifier} :\n' +
+      f'hash_{name}_{host_identifier} :\n' +
       str)
-  return (f'std::string_view constexpr hash_struct_control_{type_identifier}'
+  return (f'std::string_view constexpr hash_{name}'
     f'{{\n' + indent(f'{str}\n') + f'}};\n')
+
+def snippet_type_conditionals_by_struct_type(control_structs, type_identifier):
+  return snippet_maker_type_conditionals(control_structs,
+    f'control_{type_identifier}', f'control_{type_identifier}_base')
+
+def snippet_hashes_by_struct_type(control_structs, type_identifier):
+  return snippet_maker_hashes(control_structs,
+    f'struct_control_{type_identifier}')
+
+def snippet_type_conditionals(control_structs):
+  return snippet_maker_type_conditionals(control_structs,
+    f'lpd433_control_variable', f'lpd433_control_variable_underlying_t')
+
+def snippet_hashes(control_structs):
+  return snippet_maker_hashes(control_structs,
+    f'lpd433_control_variable')
 
 def snippet_lpd433_control_variable_parse(control_structs):
   str = f'auto lpd433_control_variable_parse(auto const &name) {{\n'
@@ -410,9 +462,10 @@ def control_cpp_include(control_structs, sensors):
 
   type_identifiers = ["state", "params"]
 
-  # str += snippet_…() + sep
+  str += snippet_enum_lpd433_control_variable_type_alias() + sep
 
-  for snippet in [snippet_struct_declaration, snippet_as_sensor]:
+  for snippet in [snippet_struct_declaration, snippet_apply_opts,
+      snippet_as_sensor]:
     for host_identifier, host_structs in control_structs.items():
       for type_identifier in type_identifiers:
         struct_fields = host_structs[f'struct_{type_identifier}']
@@ -429,11 +482,14 @@ def control_cpp_include(control_structs, sensors):
     for host_identifier, host_structs in control_structs.items():
       str += indent(snippet(host_identifier, host_structs) + sep)
 
-  for snippet in [snippet_type_conditionals, snippet_hash_struct]:
+  for snippet in [snippet_type_conditionals_by_struct_type,
+      snippet_hashes_by_struct_type]:
     for type_identifier in type_identifiers:
       str += indent(snippet(control_structs, type_identifier) + sep)
 
-  for snippet in [snippet_lpd433_control_variable_parse,
+  for snippet in [snippet_type_conditionals,
+      snippet_hashes,
+      snippet_lpd433_control_variable_parse,
       snippet_set_lpd433_control_variable]:
     str += indent(snippet(control_structs) + sep)
 

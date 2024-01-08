@@ -72,11 +72,20 @@ namespace io::toml {
       }, xs.x), xs.comment, xs.i, xs.cond);
   }
 
+  struct QuotelessWrapper {
+    std::string s;
+  };
+
+  std::ostream& operator<<(std::ostream &out, QuotelessWrapper const x) {
+    return out << x.s;
+  }
+
   template <typename T>
   std::ostream& operator<<(std::ostream& out, TOMLWrapper<T> const x) {
     auto const original_flags{out.flags()};
     indent(out, x);
-    bool constexpr needs_quotes{not std::is_arithmetic_v<T>};
+    bool constexpr needs_quotes{
+      not (std::is_arithmetic_v<T> or std::is_same_v<T, QuotelessWrapper>)};
     bool constexpr use_hex{std::is_unsigned_v<T>};
     if (use_hex) out << std::hex << std::showbase;
     if (needs_quotes) out << '\"';

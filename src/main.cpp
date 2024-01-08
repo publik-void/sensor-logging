@@ -30,7 +30,7 @@ namespace cc {
 
   std::chrono::milliseconds constexpr sampling_interval{3000};
   unsigned constexpr samples_per_aggregate{5u};
-  unsigned constexpr aggregates_per_run{3600u/*60u*/};
+  unsigned constexpr aggregates_per_run{/*3600u*//*60u*/1u};
 
   using timestamp_duration_t = std::chrono::milliseconds;
   int constexpr timestamp_width{10};
@@ -67,8 +67,12 @@ namespace cc {
 
   std::string_view constexpr basename_dir_data{"data"};
   std::string_view constexpr basename_dir_shortly{"shortly"};
-  std::string_view constexpr basename_file_control_state{".control-state"};
-  std::string_view constexpr basename_file_control_params{".control-params"};
+  std::string_view constexpr
+    basename_prefix_file_control_state{".control-state"};
+  std::string_view constexpr
+    basename_prefix_file_control_params{".control-params"};
+  std::string_view constexpr
+    basename_prefix_dir_control_triggers{".control-triggers"};
 }
 
 std::string log_info_prefix;
@@ -401,8 +405,30 @@ int main(int const argc, char const * const argv[]) {
         "  [--pulse-width=<pulse width>]\n"
         "    Play a single beep on the buzzer.\n"
         "\n"
-        "  control <variable> <setting>\n"
+        "  control set-lpd433 <variable> <value> [<time> [<date>]]\n"
         "    Set an environment control variable manually.\n"
+        "\n"
+        "    TODO\n" // TODO: Document and implement this
+        "\n"
+        "  control set-param [<variable>=<value>...]\n"
+        "    Set environment control parameters for subsequent `shortly` "
+            "runs.\n"
+        "\n"
+        "    Note that parameter name options use hyphens (`-`) instead of "
+            "underscores.\n"
+        "\n"
+        "    This creates a `.control-params-<hash>` file that contains the "
+            "serialized\n"
+        "    control parameters. A `shortly` run will read this file at "
+            "startup. To\n"
+        "    revert to the default parameters, delete the file.\n"
+        "\n"
+        "  control print-serialized [--params] [--state] [--triggers]\n"
+        "    Print any currently serialized control parameters, control state, "
+            "and\n"
+        "    triggers.\n"
+        "\n"
+        "    If no flags are given, show all.\n"
         "\n"
         "  shortly [--now] [--write-control[=<file path>]]\n"
         "    The main mode which samples sensors at periodic time points and "
@@ -570,13 +596,11 @@ int main(int const argc, char const * const argv[]) {
     flags_t flags{};
     opts_t opts{{"n-bits-min", {}}, {"n-bits-max", {}}, {"glitch", {}}};
     arg_itr = util::get_cmd_args(flags, opts, arg_itr, args.end());
-    auto const parser{+[](std::string const &s){
-      return std::stoi(s, nullptr, 0); }};
-    auto const n_bits_min{util::parse_arg_value(parser, opts, "n-bits-min",
-      cc::lpd433_receive_n_bits_min_default)};
-    auto const n_bits_max{util::parse_arg_value(parser, opts, "n-bits-max",
-      cc::lpd433_receive_n_bits_max_default)};
-    auto const glitch{util::parse_arg_value(parser, opts, "glitch",
+    auto const n_bits_min{util::parse_arg_value(util::int_parser, opts,
+      "n-bits-min", cc::lpd433_receive_n_bits_min_default)};
+    auto const n_bits_max{util::parse_arg_value(util::int_parser, opts,
+      "n-bits-max", cc::lpd433_receive_n_bits_max_default)};
+    auto const glitch{util::parse_arg_value(util::int_parser, opts, "glitch",
       cc::lpd433_receive_glitch_default)};
 
     _433D_rx_CB_t const callback{
@@ -621,17 +645,15 @@ int main(int const argc, char const * const argv[]) {
     opts_t opts{{"n-bits", {}}, {"n-repeats", {}}, {"intercode-gap", {}},
       {"pulse-length-short", {}}, {"pulse-length-long", {}}};
     arg_itr = util::get_cmd_args(flags, opts, arg_itr, args.end());
-    auto const parser{+[](std::string const &s){
-      return std::stoi(s, nullptr, 0); }};
-    auto const n_bits{util::parse_arg_value(parser, opts, "n-bits",
+    auto const n_bits{util::parse_arg_value(util::int_parser, opts, "n-bits",
       cc::lpd433_send_n_bits_default)};
-    auto const n_repeats{util::parse_arg_value(parser, opts, "n-repeats",
+    auto const n_repeats{util::parse_arg_value(util::int_parser, opts, "n-repeats",
       cc::lpd433_send_n_repeats_default)};
-    auto const intercode_gap{util::parse_arg_value(parser, opts,
+    auto const intercode_gap{util::parse_arg_value(util::int_parser, opts,
       "intercode-gap", cc::lpd433_send_intercode_gap_default)};
-    auto const pulse_length_short{util::parse_arg_value(parser, opts,
+    auto const pulse_length_short{util::parse_arg_value(util::int_parser, opts,
       "pulse-length-short", cc::lpd433_send_pulse_length_short_default)};
-    auto const pulse_length_long{util::parse_arg_value(parser, opts,
+    auto const pulse_length_long{util::parse_arg_value(util::int_parser, opts,
       "pulse-length-long", cc::lpd433_send_pulse_length_long_default)};
 
     std::vector<std::uint64_t> codes{};
@@ -663,14 +685,12 @@ int main(int const argc, char const * const argv[]) {
     flags_t flags{};
     opts_t opts{{"time", {}}, {"frequency", {}}, {"pulse-width", {}}};
     arg_itr = util::get_cmd_args(flags, opts, arg_itr, args.end());
-    auto const parser{+[](std::string const &s){
-      return std::stof(s, nullptr); }};
-    auto const t_seconds{util::parse_arg_value(parser, opts, "time",
+    auto const t_seconds{util::parse_arg_value(util::float_parser, opts, "time",
       cc::buzz_t_seconds_default)};
-    auto const f_hertz{util::parse_arg_value(parser, opts, "frequency",
-      cc::buzz_f_hertz_default)};
-    auto const pulse_width{util::parse_arg_value(parser, opts, "pulse-width",
-      cc::buzz_pulse_width_default)};
+    auto const f_hertz{util::parse_arg_value(util::float_parser, opts,
+      "frequency", cc::buzz_f_hertz_default)};
+    auto const pulse_width{util::parse_arg_value(util::float_parser, opts,
+      "pulse-width", cc::buzz_pulse_width_default)};
 
     io::Pi const pi{};
     if (io::errored(pi)) return cc::exit_code_error;
@@ -682,34 +702,159 @@ int main(int const argc, char const * const argv[]) {
     opts_t opts{};
     arg_itr = util::get_cmd_args(flags, opts, arg_itr, args.end());
 
-    if (arg_itr >= args.end()) {
-      if constexpr (cc::log_errors) std::cerr << log_error_prefix
-        << "expected 2 more arguments" << std::endl;
-      return cc::exit_code_error;
-    }
-    auto const &variable{*(arg_itr++)};
+    auto const path_file_control_params_opt{main_opts["base-path"].has_value() ?
+      std::make_optional(control::path_file_control_params_get(
+        main_opts["base-path"].value())) :
+      std::optional<std::filesystem::path>{}};
+    auto const path_file_control_state_opt{main_opts["base-path"].has_value() ?
+      std::make_optional(control::path_file_control_state_get(
+        main_opts["base-path"].value())) :
+      std::optional<std::filesystem::path>{}};
 
     if (arg_itr >= args.end()) {
       if constexpr (cc::log_errors) std::cerr << log_error_prefix
         << "expected 1 more argument" << std::endl;
       return cc::exit_code_error;
     }
-    auto const &setting{*(arg_itr++)};
+    auto const &mode{*(arg_itr++)};
 
-    // TODO: Extend this with further subcommands for timed triggering.
+    if (mode == "set-lpd433") {
+      if (arg_itr >= args.end()) {
+        if constexpr (cc::log_errors) std::cerr << log_error_prefix
+          << "expected 2 more arguments" << std::endl;
+        return cc::exit_code_error;
+      }
+      auto const &variable{*(arg_itr++)};
 
-    auto const var_opt{control::lpd433_control_variable_parse(variable)};
-    if (not var_opt.has_value()) return cc::exit_code_error;
+      if (arg_itr >= args.end()) {
+        if constexpr (cc::log_errors) std::cerr << log_error_prefix
+          << "expected 1 more argument" << std::endl;
+        return cc::exit_code_error;
+      }
+      auto const &setting{*(arg_itr++)};
 
-    auto const to_opt{util::parse_bool(setting)};
-    if (not to_opt.has_value()) return cc::exit_code_error;
+      auto const var_opt{control::lpd433_control_variable_parse(variable)};
+      if (not var_opt.has_value()) return cc::exit_code_error;
 
-    io::Pi const pi{};
-    if (io::errored(pi)) return cc::exit_code_error;
+      auto const to_opt{util::parse_bool(setting)};
+      if (not to_opt.has_value()) return cc::exit_code_error;
 
-    // TODO: If a serialized control state exists, update it.
-    control::set_lpd433_control_variable(pi, var_opt.value(), to_opt.value());
+      if (arg_itr >= args.end()) {
+        io::Pi const pi{};
+        if (io::errored(pi)) return cc::exit_code_error;
 
+        std::optional<control::control_state> state_opt{};
+        if (path_file_control_state_opt.has_value())
+          state_opt = control::safe_deserialize<control::control_state>(
+            path_file_control_state_opt.value());
+
+        if (state_opt.has_value()) {
+          auto state{state_opt.value()};
+          auto const params{control::deserialize_or<control::control_params>(
+            path_file_control_params_opt, "environment control parameters", {},
+            false)};
+          control::set_lpd433_control_variable(pi, state, params,
+            var_opt.value(), to_opt.value());
+          control::file_clear(path_file_control_state_opt.value());
+          control::safe_serialize(state, path_file_control_state_opt.value());
+        } else control::set_lpd433_control_variable(pi, var_opt.value(),
+            to_opt.value());
+      } else {
+        std::string const arg_time{*(arg_itr++)};
+        bool const daily{(arg_itr >= args.end())};
+        std::string const arg_date{daily ? "1970-01-01" : *(arg_itr++)};
+        std::string const time_string{arg_date + " " + arg_time};
+
+        std::istringstream iss{time_string}; std::tm when_tm{};
+        iss >> std::get_time(&when_tm, "%Y-%m-%d %H:%M:%S");
+        if (iss.fail()) {
+          if constexpr (cc::log_errors) std::cerr << log_error_prefix
+            << "parsing time string `" << time_string << "`." << std::endl;
+          return cc::exit_code_error;
+        }
+        auto const when{
+          std::chrono::system_clock::from_time_t(std::mktime(&when_tm))};
+
+        control::control_trigger trigger{var_opt.value(), to_opt.value(),
+          when, daily};
+        // NOTE: I could check earlier if the base path was given, but this way,
+        // the command without a given base path can be used as a sort of dry
+        // run.
+        if (main_opts["base-path"].has_value())
+          control::write(trigger, main_opts["base-path"].value());
+        else {
+          if constexpr (cc::log_errors) std::cerr << log_error_prefix
+            << "`--base-path` option not given." << std::endl;
+          return cc::exit_code_error;
+        }
+      }
+    } else if (mode == "set-param") {
+      auto control_params{control::deserialize_or<control::control_params>(
+        path_file_control_params_opt, "environment control parameters")};
+      flags_t flags{};
+      opts_t opts{control::control_params::get_empty_opts()};
+      arg_itr = util::get_cmd_args(flags, opts, arg_itr, args.end());
+      control_params = control::apply_opts(opts, control_params);
+      // NOTE: I could check earlier if the base path was given, but this way,
+      // the command without a given base path can be used as a sort of dry run.
+      if (path_file_control_params_opt.has_value())
+        safe_serialize(control_params, path_file_control_params_opt.value());
+      else {
+        if constexpr (cc::log_errors) std::cerr << log_error_prefix
+          << "`--base-path` option not given." << std::endl;
+        return cc::exit_code_error;
+      }
+    } else if (mode == "print-serialized") {
+      if (not main_opts["base-path"].has_value()) {
+        if constexpr (cc::log_errors) std::cerr << log_error_prefix
+          << "`--base-path` option not given." << std::endl;
+        return cc::exit_code_error;
+      }
+
+      flags_t flags{{"params", false}, {"state", false}, {"triggers", false}};
+      opts_t opts{};
+      arg_itr = util::get_cmd_args(flags, opts, arg_itr, args.end());
+      if (not (flags["params"] or flags["state"] or flags["triggers"])) {
+        flags["params"] = true; flags["state"] = true; flags["triggers"] = true;
+      }
+
+      auto &out{std::cout};
+
+      if (flags["params"]) {
+        auto const params_opt{
+          control::safe_deserialize<control::control_params>(
+            path_file_control_params_opt.value())};
+        if (params_opt.has_value()) {
+          auto timestamp{control::get_file_timestamp(
+            path_file_control_params_opt.value())};
+          sensors::write_field_names(out,
+            control::as_sensor(params_opt.value(), timestamp), write_format);
+          sensors::write_fields(out,
+            control::as_sensor(params_opt.value(), timestamp), write_format);
+        }
+      }
+
+      if (flags["state"]) {
+        auto const state_opt{control::safe_deserialize<control::control_state>(
+          path_file_control_state_opt.value())};
+        if (state_opt.has_value()) {
+          auto timestamp{control::get_file_timestamp(
+            path_file_control_state_opt.value())};
+          sensors::write_field_names(out,
+            control::as_sensor(state_opt.value(), timestamp), write_format);
+          sensors::write_fields(out,
+            control::as_sensor(state_opt.value(), timestamp), write_format);
+        }
+      }
+
+      // TODO: Print serialized triggers
+
+      out << std::flush;
+    } else {
+      if constexpr (cc::log_errors) std::cerr << log_error_prefix
+        << "Unknown subcommand `" << mode << "`" << std::endl;
+      return cc::exit_code_error;
+    }
   } else if (main_mode == MainMode::shortly) {
     flags_t flags{{"now", false}, {"write-control", false}};
     opts_t opts{{"write-control", {}}};
@@ -764,9 +909,10 @@ int main(int const argc, char const * const argv[]) {
       auto const filename_prefix{[&](){
           auto const ctime_filename{
             std::chrono::system_clock::to_time_t(time_point_filename)};
-          char filename_prefix[20];
+          char filename_prefix[21];
           std::strftime(filename_prefix, sizeof(filename_prefix),
             "%Y-%m-%d-%H-%M-%SZ", std::gmtime(&ctime_filename));
+          filename_prefix[20] = '\0';
           return std::string{filename_prefix};
         }()};
       auto const path_dir_shortly{std::filesystem::path{
@@ -813,23 +959,17 @@ int main(int const argc, char const * const argv[]) {
     }
 
     // Instantiate control parameters and state
-    // NOTE: I have the functionality to (de-)serialize the control parameters
-    // in the same way as I do with the control state. I planned on doing this,
-    // but now I can't remember any good reason for it. Tuning these parameters
-    // is probably best done by changing their respective "default" field in the
-    // JSON file and recompiling the binary. And this then allows me to
-    // instantiate them as `constexpr`-qualified here:
-    control::control_params constexpr control_params{};
-    //auto const path_file_control_params_opt{main_opts["base-path"].has_value() ?
-    //  std::make_optional(control::path_file_control_params_get(
-    //    main_opts["base-path"].value())) :
-    //  std::optional<std::filesystem::path>{}};
+    auto const path_file_control_params_opt{main_opts["base-path"].has_value() ?
+      std::make_optional(control::path_file_control_params_get(
+        main_opts["base-path"].value())) :
+      std::optional<std::filesystem::path>{}};
     auto const path_file_control_state_opt{main_opts["base-path"].has_value() ?
       std::make_optional(control::path_file_control_state_get(
         main_opts["base-path"].value())) :
       std::optional<std::filesystem::path>{}};
-    //auto control_params{control::deserialize_or<control::control_params>(
-    //  path_file_control_params_opt, "environment control parameters")};
+    auto control_params{control::deserialize_or<control::control_params>(
+      path_file_control_params_opt, "environment control parameters", {},
+      false)};
     auto control_state{control::deserialize_or<control::control_state>(
       path_file_control_state_opt, "environment control state")};
 

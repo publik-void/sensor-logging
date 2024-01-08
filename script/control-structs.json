@@ -81,6 +81,13 @@
           "pulse_length_short": 300,
           "pulse_length_long": 980
         }
+      },
+      {
+        "name": "lpd433_ignore_time_counter",
+        "type": "float",
+        "default": "0.f",
+        "width": 2,
+        "decimals": 1
       }
     ],
     "struct_params": [

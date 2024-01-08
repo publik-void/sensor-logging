@@ -110,7 +110,7 @@ namespace util {
     return pos;
   }
 
-  std::optional<bool> parse_bool(auto const &str){
+  std::optional<bool> parse_bool(auto const &str) {
     if (str == "true" or str == "1" or str == "on" or str == "yes")
       return {true};
     if (str == "false" or str == "0" or str == "off" or str == "no")
@@ -119,6 +119,19 @@ namespace util {
       << "parsing \"" << str << "\" as boolean value." << std::endl;
     return {};
   }
+
+  auto const bool_parser{+[](std::string const &str){
+      auto const result_opt{parse_bool(str)};
+      if (not result_opt.has_value()) {
+        throw std::invalid_argument("see previous error message");
+      } else return result_opt.value();
+    }};
+
+  auto const int_parser{+[](std::string const &s){
+    return std::stoi(s, nullptr, 0); }};
+
+  auto const float_parser{+[](std::string const &s){
+    return std::stof(s, nullptr); }};
 
   auto parse_arg_value(auto &&parser, auto &opts, auto const &key,
       auto const &default_value) {
