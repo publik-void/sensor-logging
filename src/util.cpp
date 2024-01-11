@@ -162,8 +162,38 @@ namespace util {
       "reached end-of-file" :
     "unknown error"; }};
 
-  auto const safe_openable{[](
-      std::filesystem::path const &path_file){
+  bool safe_readable(std::filesystem::path const &path_file) {
+    try {
+      auto const status{std::filesystem::status(path_file)};
+      if (status.type() != std::filesystem::file_type::regular) {
+        if (status.type() == std::filesystem::file_type::not_found or
+            status.type() == std::filesystem::file_type::unknown) {
+          if constexpr (cc::log_errors) std::cerr << log_error_prefix <<
+            path_file << " is nonexistent or not readable." << std::endl;
+        } else {
+          if constexpr (cc::log_errors) std::cerr << log_error_prefix <<
+            path_file << " is not a regular file." << std::endl;
+        }
+        return false;
+      }
+      // NOTE: What's missing here is a check that the file belongs to the
+      // current user. As far as I can tell, there is not standard library
+      // functionality for this.
+      if (std::filesystem::perms::none ==
+          (status.permissions() & std::filesystem::perms::owner_read)) {
+        if constexpr (cc::log_errors) std::cerr << log_error_prefix <<
+          path_file << " is not readable by its owner." << std::endl;
+        return false;
+      }
+    } catch (std::filesystem::filesystem_error const &e) {
+      if constexpr (cc::log_errors) std::cerr << log_error_prefix <<
+        e.what() << std::endl;
+      return false;
+    }
+    return true;
+  }
+
+  bool safe_writeable(std::filesystem::path const &path_file) {
     try {
       auto const type{std::filesystem::status(path_file).type()};
       if (type == std::filesystem::file_type::regular) {
@@ -185,7 +215,7 @@ namespace util {
       return false;
     }
     return true;
-  }};
+  }
 
   auto const safe_is_directory{[](std::filesystem::path const &path_dir){
       try {

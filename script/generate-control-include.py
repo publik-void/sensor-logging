@@ -430,6 +430,15 @@ def snippet_hashes(control_structs):
   return snippet_maker_hashes(control_structs,
     f'lpd433_control_variable')
 
+def snippet_hostname_c(control_structs):
+  str = f'""\n'
+  for host_identifier, _ in reversed(control_structs.items()):
+    str = dedent(f'''\
+      cc::host == cc::Host::{host_identifier} ?
+      "{host_identifier}" :
+      ''') + str
+  return f'std::string_view constexpr hostname_c{{\n' + indent(str) + f'}};\n'
+
 def snippet_lpd433_control_variable_parse(control_structs):
   str = f'auto lpd433_control_variable_parse(auto const &name) {{\n'
   is_first_entry = True
@@ -488,7 +497,7 @@ def control_cpp_include(control_structs, sensors):
       str += indent(snippet(control_structs, type_identifier) + sep)
 
   for snippet in [snippet_type_conditionals,
-      snippet_hashes,
+      snippet_hashes, snippet_hostname_c,
       snippet_lpd433_control_variable_parse,
       snippet_set_lpd433_control_variable]:
     str += indent(snippet(control_structs) + sep)

@@ -31,7 +31,7 @@ namespace control {
   template <typename T>
   std::optional<T> safe_deserialize(std::filesystem::path const &path_file) {
     try {
-      if (std::filesystem::exists(path_file)) {
+      if (util::safe_readable(path_file)) {
         // NOTE: Checking for the correct file size does not guarantee no errors
         // for various reasons (e.g. file size could still be changed in
         // between, file could store data of a different struct type, etc.). It
@@ -294,21 +294,29 @@ namespace control {
       (self.to ? "on" : "off")};
   }
 
-  return write(control_trigger const &self, auto const &path_base) {
-    if (util::safe_create_directory(path_dir_hostname_get(path_base))) {
-      auto const path_dir_control_triggers{
-        path_dir_control_triggers_get(path_base)};
-      if (util::safe_create_directory(path_dir_control_triggers)) {
-        auto const path_file{path_dir_control_triggers / basename(self)};
-        return safe_serialize<control_trigger>(self, path_file).has_value();
-      }
+  std::ostream& write_header_as_csv(std::ostream& out,
+      control_trigger const &) {
+    return out
+      << "\"control_triggers_" << control::hostname_c << "_time\", "
+      << "\"control_triggers_" << control::hostname_c << "_variable\", "
+      << "\"control_triggers_" << control::hostname_c << "_value\"\n";
+  }
+
+  std::ostream& write_as_csv(std::ostream& out,
+      control_trigger const &trigger, bool const pad = true) {
+    if (not trigger.daily) out << "\"" << when_date(trigger) + "T";
+    else {
+      if (pad) out << "           ";
+      out << "\"";
     }
-    return false;
+    out << when_time(trigger) + "Z\", " << "\"" << name(trigger.var) << "\", "
+      << io::csv::CSVWrapper(trigger.to)  << "\n";
+    return out;
   }
 
   std::ostream& write_as_toml(std::ostream& out,
       control_trigger const &trigger) {
-    out << "[[control_triggers_" << cc::hostname << "]]\n";
+    out << "[[control_triggers_" << control::hostname_c << "]]\n";
     if (trigger.daily) out << io::toml::TOMLWrapper{std::make_pair("time",
       io::toml::QuotelessWrapper{when_time(trigger) + "Z"})};
     else out << io::toml::TOMLWrapper{std::make_pair("time",
@@ -317,6 +325,42 @@ namespace control {
     out << io::toml::TOMLWrapper{std::make_pair("variable", name(trigger.var))};
     out << io::toml::TOMLWrapper{std::make_pair("value", trigger.to)};
     return out << "\n";
+  }
+
+  bool write(control_trigger const &self, auto const &path_base) {
+    if (util::safe_create_directory(path_dir_hostname_get(path_base))) {
+      auto const path_dir_control_triggers{
+        path_dir_control_triggers_get(path_base)};
+      if (util::safe_create_directory(path_dir_control_triggers)) {
+        auto const path_file{path_dir_control_triggers / basename(self)};
+        bool const success{
+          safe_serialize<control_trigger>(self, path_file).has_value()};
+        if constexpr (cc::log_info) {
+          std::cerr << log_info_prefix
+            << "Trigger written successfully to `" << path_file
+            << "` with data: ";
+          write_as_csv(std::cerr, self, false) << std::flush;
+        }
+        return success;
+      }
+    }
+    return false;
+  }
+
+  std::vector<control_trigger> read_triggers(auto const &path_base) {
+    auto const path_dir_control_triggers{
+      path_dir_control_triggers_get(path_base)};
+    std::vector<control_trigger> triggers{};
+    for (auto const &entry :
+        std::filesystem::directory_iterator{path_dir_control_triggers}) {
+      auto const entry_basename{entry.path().filename().string()};
+      if (entry_basename.rfind("single-", 0) == 0 or
+          entry_basename.rfind("daily-", 0) == 0) {
+        auto const trigger_opt{safe_deserialize<control_trigger>(entry.path())};
+        if (trigger_opt.has_value()) triggers.push_back(trigger_opt.value());
+      }
+    }
+    return triggers;
   }
 
   // NOTE: The code below could probably be written or even generated with all
@@ -352,6 +396,8 @@ namespace control {
       update_from_lpd433(pi, lpd433_receiver_opt, succ, sampling_interval)};
     std::vector<std::tuple<lpd433_control_variable_lasse_raspberrypi_1, bool,
       std::optional<float>>> overrides{/*TODO: timer updates*/};
+    // TODO: What's also missing for those timer updates is a hold time argument
+    // for the `control set-lpd433` command
     if (lpd433_update.has_value()) overrides.emplace_back(
       lpd433_update.value().first, lpd433_update.value().second,
       std::optional<float>{});

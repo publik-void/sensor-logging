@@ -119,7 +119,7 @@ namespace cc {
       {MainMode::lpd433_listen , sensors::WriteFormat::csv },
       {MainMode::lpd433_oneshot, sensors::WriteFormat::csv },
       {MainMode::buzz_oneshot  , sensors::WriteFormat::csv },
-      {MainMode::control       , sensors::WriteFormat::csv },
+      {MainMode::control       , sensors::WriteFormat::toml},
       {MainMode::shortly       , sensors::WriteFormat::csv },
       {MainMode::daily         , sensors::WriteFormat::csv }};
 
@@ -321,7 +321,7 @@ int main(int const argc, char const * const argv[]) {
   sensors::WriteFormat const write_format{[&](){
       auto const &opt_format{main_opts["format"]};
       if (opt_format.has_value()) {
-        auto const opt_format_value{opt_format.value()};
+        auto const opt_format_value{*opt_format};
         using U = std::underlying_type_t<sensors::WriteFormat>;
         for (auto wf{sensors::WriteFormat::csv};
             static_cast<U>(wf) <= static_cast<U>(sensors::WriteFormat::toml);
@@ -406,11 +406,28 @@ int main(int const argc, char const * const argv[]) {
         "    Play a single beep on the buzzer.\n"
         "\n"
         "  control set-lpd433 <variable> <value> [<time> [<date>]]\n"
-        "    Set an environment control variable manually.\n"
+        "    Set an LPD433 environment control variable manually.\n"
         "\n"
-        "    TODO\n" // TODO: Document and implement this
+        "    If `<time>` is given, the environment variable will not be set "
+            "immediately.\n"
+        "    Instead, a file will be created in the `.control-triggers-<hash>` "
+            "directory,\n"
+        "    representing a timed trigger. Subsequent `shortly` runs will look "
+            "for such\n"
+        "    trigger files and set the environment variable at the given time. "
+            "A trigger\n"
+        "    can be disabled by removing its trigger file.\n"
         "\n"
-        "  control set-param [<variable>=<value>...]\n"
+        "    If only `<time>` is given, the trigger will be executed once "
+            "daily. If\n"
+        "    `<date>` is given as well, the trigger will be executed on that "
+            "date only.\n"
+        "\n"
+        "    `<time>` can e.g. have the format `HH:MM:SS`, which represents "
+            "local time.\n"
+        "    `<date>` can e.g. have the format `YYYY-MM-DD`.\n"
+        "\n"
+        "  control set-param [--<variable>=<value>...]\n"
         "    Set environment control parameters for subsequent `shortly` "
             "runs.\n"
         "\n"
@@ -492,7 +509,7 @@ int main(int const argc, char const * const argv[]) {
         << io::toml::TOMLWrapper{std::make_pair("process", args.front())};
       if (main_opts["base-path"].has_value()) out
         << io::toml::TOMLWrapper{std::make_pair("base_path",
-            main_opts["base-path"].value())};
+            *main_opts["base-path"])};
       if (main_opts["format"].has_value()) out
         << io::toml::TOMLWrapper{std::make_pair("format",
             sensors::write_format_ext(write_format))};
@@ -575,7 +592,7 @@ int main(int const argc, char const * const argv[]) {
             if (gpio_index_opt.has_value()) {
               out << "\n[aux_devices." << type << "]\n"
                 << io::toml::TOMLWrapper{std::make_pair("gpio_index",
-                  gpio_index_opt.value())};
+                  *gpio_index_opt)};
             }
           }, std::make_tuple(
             cc::lpd433_receiver_gpio_index,
@@ -604,7 +621,7 @@ int main(int const argc, char const * const argv[]) {
       cc::lpd433_receive_glitch_default)};
 
     _433D_rx_CB_t const callback{
-      // TODO: This is ugly, because the lambda(s) may not capture
+      // NOTE: This is ugly, because the lambda(s) may not capture
       // `write_format`. Can it be done more elegantly?
       write_format == sensors::WriteFormat::csv ?
         +[](_433D_rx_data_t x){
@@ -625,7 +642,7 @@ int main(int const argc, char const * const argv[]) {
     if (io::errored(pi)) return cc::exit_code_error;
 
     io::LPD433Receiver const
-      lpd433_receiver{pi, cc::lpd433_receiver_gpio_index.value(), callback};
+      lpd433_receiver{pi, *cc::lpd433_receiver_gpio_index, callback};
     _433D_rx_set_bits(lpd433_receiver, n_bits_min, n_bits_max);
     _433D_rx_set_glitch(lpd433_receiver, glitch);
 
@@ -672,7 +689,7 @@ int main(int const argc, char const * const argv[]) {
     io::Pi const pi{};
     if (io::errored(pi)) return cc::exit_code_error;
 
-    io::lpd433_send_oneshot(pi, cc::lpd433_transmitter_gpio_index.value(),
+    io::lpd433_send_oneshot(pi, *cc::lpd433_transmitter_gpio_index,
       codes, n_bits, n_repeats, intercode_gap, pulse_length_short,
       pulse_length_long);
   } else if (main_mode == MainMode::buzz_oneshot) {
@@ -695,7 +712,7 @@ int main(int const argc, char const * const argv[]) {
     io::Pi const pi{};
     if (io::errored(pi)) return cc::exit_code_error;
 
-    buzz_oneshot(pi, cc::buzzer_gpio_index.value(), t_seconds, f_hertz,
+    buzz_oneshot(pi, *cc::buzzer_gpio_index, t_seconds, f_hertz,
       pulse_width);
   } else if (main_mode == MainMode::control) {
     flags_t flags{};
@@ -704,11 +721,11 @@ int main(int const argc, char const * const argv[]) {
 
     auto const path_file_control_params_opt{main_opts["base-path"].has_value() ?
       std::make_optional(control::path_file_control_params_get(
-        main_opts["base-path"].value())) :
+        *main_opts["base-path"])) :
       std::optional<std::filesystem::path>{}};
     auto const path_file_control_state_opt{main_opts["base-path"].has_value() ?
       std::make_optional(control::path_file_control_state_get(
-        main_opts["base-path"].value())) :
+        *main_opts["base-path"])) :
       std::optional<std::filesystem::path>{}};
 
     if (arg_itr >= args.end()) {
@@ -746,19 +763,19 @@ int main(int const argc, char const * const argv[]) {
         std::optional<control::control_state> state_opt{};
         if (path_file_control_state_opt.has_value())
           state_opt = control::safe_deserialize<control::control_state>(
-            path_file_control_state_opt.value());
+            *path_file_control_state_opt);
 
         if (state_opt.has_value()) {
-          auto state{state_opt.value()};
+          auto state{*state_opt};
           auto const params{control::deserialize_or<control::control_params>(
             path_file_control_params_opt, "environment control parameters", {},
             false)};
           control::set_lpd433_control_variable(pi, state, params,
-            var_opt.value(), to_opt.value());
-          control::file_clear(path_file_control_state_opt.value());
-          control::safe_serialize(state, path_file_control_state_opt.value());
-        } else control::set_lpd433_control_variable(pi, var_opt.value(),
-            to_opt.value());
+            *var_opt, *to_opt);
+          control::file_clear(*path_file_control_state_opt);
+          control::safe_serialize(state, *path_file_control_state_opt);
+        } else control::set_lpd433_control_variable(pi, *var_opt,
+            *to_opt);
       } else {
         std::string const arg_time{*(arg_itr++)};
         bool const daily{(arg_itr >= args.end())};
@@ -775,13 +792,13 @@ int main(int const argc, char const * const argv[]) {
         auto const when{
           std::chrono::system_clock::from_time_t(std::mktime(&when_tm))};
 
-        control::control_trigger trigger{var_opt.value(), to_opt.value(),
+        control::control_trigger trigger{*var_opt, *to_opt,
           when, daily};
         // NOTE: I could check earlier if the base path was given, but this way,
         // the command without a given base path can be used as a sort of dry
         // run.
         if (main_opts["base-path"].has_value())
-          control::write(trigger, main_opts["base-path"].value());
+          control::write(trigger, *main_opts["base-path"]);
         else {
           if constexpr (cc::log_errors) std::cerr << log_error_prefix
             << "`--base-path` option not given." << std::endl;
@@ -798,7 +815,7 @@ int main(int const argc, char const * const argv[]) {
       // NOTE: I could check earlier if the base path was given, but this way,
       // the command without a given base path can be used as a sort of dry run.
       if (path_file_control_params_opt.has_value())
-        safe_serialize(control_params, path_file_control_params_opt.value());
+        safe_serialize(control_params, *path_file_control_params_opt);
       else {
         if constexpr (cc::log_errors) std::cerr << log_error_prefix
           << "`--base-path` option not given." << std::endl;
@@ -820,34 +837,48 @@ int main(int const argc, char const * const argv[]) {
 
       auto &out{std::cout};
 
-      if (flags["params"]) {
+      if (flags["params"] and
+          std::filesystem::exists(*path_file_control_params_opt)) {
         auto const params_opt{
           control::safe_deserialize<control::control_params>(
-            path_file_control_params_opt.value())};
+            *path_file_control_params_opt)};
         if (params_opt.has_value()) {
           auto timestamp{control::get_file_timestamp(
-            path_file_control_params_opt.value())};
+            *path_file_control_params_opt)};
           sensors::write_field_names(out,
-            control::as_sensor(params_opt.value(), timestamp), write_format);
+            control::as_sensor(*params_opt, timestamp), write_format);
           sensors::write_fields(out,
-            control::as_sensor(params_opt.value(), timestamp), write_format);
+            control::as_sensor(*params_opt, timestamp), write_format);
         }
       }
 
-      if (flags["state"]) {
+      if (flags["state"] and
+          std::filesystem::exists(*path_file_control_state_opt)) {
         auto const state_opt{control::safe_deserialize<control::control_state>(
-          path_file_control_state_opt.value())};
+          *path_file_control_state_opt)};
         if (state_opt.has_value()) {
           auto timestamp{control::get_file_timestamp(
-            path_file_control_state_opt.value())};
+            *path_file_control_state_opt)};
           sensors::write_field_names(out,
-            control::as_sensor(state_opt.value(), timestamp), write_format);
+            control::as_sensor(*state_opt, timestamp), write_format);
           sensors::write_fields(out,
-            control::as_sensor(state_opt.value(), timestamp), write_format);
+            control::as_sensor(*state_opt, timestamp), write_format);
         }
       }
 
-      // TODO: Print serialized triggers
+      if (flags["triggers"]) {
+        auto const triggers{control::read_triggers(*main_opts["base-path"])};
+
+        if (write_format == sensors::WriteFormat::toml) {
+          for (auto const &trigger : triggers)
+            write_as_toml(std::cout, trigger);
+        } else {
+          if (not triggers.empty())
+            write_header_as_csv(std::cout, triggers.front());
+          for (auto const &trigger : triggers)
+            write_as_csv(std::cout, trigger);
+        }
+      }
 
       out << std::flush;
     } else {
@@ -916,7 +947,7 @@ int main(int const argc, char const * const argv[]) {
           return std::string{filename_prefix};
         }()};
       auto const path_dir_shortly{std::filesystem::path{
-        main_opts["base-path"].value()} / cc::basename_dir_data /
+        *main_opts["base-path"]} / cc::basename_dir_data /
         cc::basename_dir_shortly};
 
       if (not util::safe_is_directory(path_dir_shortly))
@@ -932,7 +963,7 @@ int main(int const argc, char const * const argv[]) {
           std::filesystem::path const basename_file{filename_prefix +
             "-" + name + "." + sensors::write_format_ext(write_format)};
           auto const path_file{dirname_file / basename_file};
-          if (not util::safe_openable(path_file))
+          if (not util::safe_writeable(path_file))
             { error_during_resource_allocation = true; return; }
 
           if (not util::safe_open(fs, path_file, std::ios::out))
@@ -948,8 +979,8 @@ int main(int const argc, char const * const argv[]) {
 
     // Open file for writing environment control output
     if (opts["write-control"].has_value()) {
-      std::filesystem::path path_file{opts["write-control"].value()};
-      if (not util::safe_openable(path_file))
+      std::filesystem::path path_file{*opts["write-control"]};
+      if (not util::safe_writeable(path_file))
         { close_files(); return cc::exit_code_error; }
       if (not util::safe_open(control_file_stream, path_file, std::ios::out))
         { close_files(); return cc::exit_code_error; }
@@ -961,11 +992,11 @@ int main(int const argc, char const * const argv[]) {
     // Instantiate control parameters and state
     auto const path_file_control_params_opt{main_opts["base-path"].has_value() ?
       std::make_optional(control::path_file_control_params_get(
-        main_opts["base-path"].value())) :
+        *main_opts["base-path"])) :
       std::optional<std::filesystem::path>{}};
     auto const path_file_control_state_opt{main_opts["base-path"].has_value() ?
       std::make_optional(control::path_file_control_state_get(
-        main_opts["base-path"].value())) :
+        *main_opts["base-path"])) :
       std::optional<std::filesystem::path>{}};
     auto control_params{control::deserialize_or<control::control_params>(
       path_file_control_params_opt, "environment control parameters", {},
@@ -990,10 +1021,10 @@ int main(int const argc, char const * const argv[]) {
 
     auto const lpd433_receiver_opt{cc::lpd433_receiver_gpio_index.has_value()
       ? std::optional<io::LPD433Receiver>{
-        io::LPD433Receiver{pi, cc::lpd433_receiver_gpio_index.value()}}
+        io::LPD433Receiver{pi, *cc::lpd433_receiver_gpio_index}}
       : std::optional<io::LPD433Receiver>{}};
     if (lpd433_receiver_opt.has_value() and
-        io::errored(lpd433_receiver_opt.value()))
+        io::errored(*lpd433_receiver_opt))
       { close_files(); return cc::exit_code_error; }
 
     // Initial output
@@ -1065,10 +1096,8 @@ int main(int const argc, char const * const argv[]) {
       }
     }
 
-    //if (path_file_control_params_opt.has_value())
-    //  safe_serialize(control_params, path_file_control_params_opt.value());
     if (path_file_control_state_opt.has_value())
-      safe_serialize(control_state, path_file_control_state_opt.value());
+      safe_serialize(control_state, *path_file_control_state_opt);
 
     close_files();
   } else if (main_mode == MainMode::daily) {
@@ -1112,7 +1141,7 @@ int main(int const argc, char const * const argv[]) {
         return result;
       }()};
 
-    std::filesystem::path const path_base{main_opts["base-path"].value()};
+    std::filesystem::path const path_base{*main_opts["base-path"]};
     std::filesystem::path const
       daily_py_path{path_base / "script" / "daily.py"};
 
