@@ -405,7 +405,9 @@ int main(int const argc, char const * const argv[]) {
         "  [--pulse-width=<pulse width>]\n"
         "    Play a single beep on the buzzer.\n"
         "\n"
-        "  control set-lpd433 <variable> <value> [<time> [<date>]]\n"
+        "  control set-lpd433 --hold-time=<t in seconds> <variable> <value> "
+          "\\\n"
+        "  [<time> [<date>]]\n"
         "    Set an LPD433 environment control variable manually.\n"
         "\n"
         "    If `<time>` is given, the environment variable will not be set "
@@ -426,6 +428,10 @@ int main(int const argc, char const * const argv[]) {
         "    `<time>` can e.g. have the format `HH:MM:SS`, which represents "
             "local time.\n"
         "    `<date>` can e.g. have the format `YYYY-MM-DD`.\n"
+        "\n"
+        "    The default hold time can be overridden with the `--hold-time` "
+            "option. This\n"
+        "    option only has an effect for timed triggers.\n"
         "\n"
         "  control set-param [--<variable>=<value>...]\n"
         "    Set environment control parameters for subsequent `shortly` "
@@ -741,6 +747,16 @@ int main(int const argc, char const * const argv[]) {
           << "expected 2 more arguments" << std::endl;
         return cc::exit_code_error;
       }
+
+      flags_t flags{};
+      opts_t opts{{"hold-time", {}}};
+      arg_itr = util::get_cmd_args(flags, opts, arg_itr, args.end());
+      std::optional<float> hold_time{};
+      if (opts["hold-time"].has_value())
+        hold_time = util::parse_arg_value(util::float_parser, opts, "hold-time",
+          std::numeric_limits<float>::quiet_NaN());
+      if (hold_time.has_value() and std::isnan(*hold_time)) hold_time = {};
+
       auto const &variable{*(arg_itr++)};
 
       if (arg_itr >= args.end()) {
@@ -774,8 +790,7 @@ int main(int const argc, char const * const argv[]) {
             *var_opt, *to_opt);
           control::file_clear(*path_file_control_state_opt);
           control::safe_serialize(state, *path_file_control_state_opt);
-        } else control::set_lpd433_control_variable(pi, *var_opt,
-            *to_opt);
+        } else control::set_lpd433_control_variable(pi, *var_opt, *to_opt);
       } else {
         std::string const arg_time{*(arg_itr++)};
         bool const daily{(arg_itr >= args.end())};
@@ -793,7 +808,7 @@ int main(int const argc, char const * const argv[]) {
           std::chrono::system_clock::from_time_t(std::mktime(&when_tm))};
 
         control::control_trigger trigger{*var_opt, *to_opt,
-          when, daily};
+          when, daily, hold_time};
         // NOTE: I could check earlier if the base path was given, but this way,
         // the command without a given base path can be used as a sort of dry
         // run.

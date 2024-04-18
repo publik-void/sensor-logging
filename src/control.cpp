@@ -261,6 +261,7 @@ namespace control {
     bool to;
     std::chrono::system_clock::time_point when;
     bool daily;
+    std::optional<float> hold_time;
   };
 
   auto when_gmtime(control_trigger const &self) {
@@ -291,7 +292,8 @@ namespace control {
     return {(self.daily ? "daily-" : "single-") +
       (self.daily ? std::string{""} : when_date(self) + "-") +
       when_time(self, '-') + "Z-" + name(self.var) + "-" +
-      (self.to ? "on" : "off")};
+      (self.to ? "on" : "off") + (self.hold_time.has_value() ?
+        "-" + std::to_string(*self.hold_time) : "")};
   }
 
   std::ostream& write_header_as_csv(std::ostream& out,
@@ -299,7 +301,8 @@ namespace control {
     return out
       << "\"control_triggers_" << control::hostname_c << "_time\", "
       << "\"control_triggers_" << control::hostname_c << "_variable\", "
-      << "\"control_triggers_" << control::hostname_c << "_value\"\n";
+      << "\"control_triggers_" << control::hostname_c << "_value\", "
+      << "\"control_triggers_" << control::hostname_c << "_hold_time\"\n";
   }
 
   std::ostream& write_as_csv(std::ostream& out,
@@ -310,7 +313,8 @@ namespace control {
       out << "\"";
     }
     out << when_time(trigger) + "Z\", " << "\"" << name(trigger.var) << "\", "
-      << io::csv::CSVWrapper(trigger.to)  << "\n";
+      << io::csv::CSVWrapper(trigger.to) << ", "
+      << io::csv::CSVWrapper(trigger.hold_time) << "\n";
     return out;
   }
 
@@ -324,6 +328,8 @@ namespace control {
         "Z"})};
     out << io::toml::TOMLWrapper{std::make_pair("variable", name(trigger.var))};
     out << io::toml::TOMLWrapper{std::make_pair("value", trigger.to)};
+    out << io::toml::TOMLWrapper{
+      std::make_pair("hold_time", trigger.hold_time)};
     return out << "\n";
   }
 
@@ -351,15 +357,17 @@ namespace control {
     auto const path_dir_control_triggers{
       path_dir_control_triggers_get(path_base)};
     std::vector<control_trigger> triggers{};
-    for (auto const &entry :
-        std::filesystem::directory_iterator{path_dir_control_triggers}) {
-      auto const entry_basename{entry.path().filename().string()};
-      if (entry_basename.rfind("single-", 0) == 0 or
-          entry_basename.rfind("daily-", 0) == 0) {
-        auto const trigger_opt{safe_deserialize<control_trigger>(entry.path())};
-        if (trigger_opt.has_value()) triggers.push_back(trigger_opt.value());
+    if (std::filesystem::is_directory(path_dir_control_triggers))
+      for (auto const &entry :
+          std::filesystem::directory_iterator{path_dir_control_triggers}) {
+        auto const entry_basename{entry.path().filename().string()};
+        if (entry_basename.rfind("single-", 0) == 0 or
+            entry_basename.rfind("daily-", 0) == 0) {
+          auto const trigger_opt{
+            safe_deserialize<control_trigger>(entry.path())};
+          if (trigger_opt.has_value()) triggers.push_back(trigger_opt.value());
+        }
       }
-    }
     return triggers;
   }
 
@@ -396,8 +404,6 @@ namespace control {
       update_from_lpd433(pi, lpd433_receiver_opt, succ, sampling_interval)};
     std::vector<std::tuple<lpd433_control_variable_lasse_raspberrypi_1, bool,
       std::optional<float>>> overrides{/*TODO: timer updates*/};
-    // TODO: What's also missing for those timer updates is a hold time argument
-    // for the `control set-lpd433` command
     if (lpd433_update.has_value()) overrides.emplace_back(
       lpd433_update.value().first, lpd433_update.value().second,
       std::optional<float>{});
