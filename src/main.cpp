@@ -30,7 +30,7 @@ namespace cc {
 
   std::chrono::milliseconds constexpr sampling_interval{3000};
   unsigned constexpr samples_per_aggregate{5u};
-  unsigned constexpr aggregates_per_run{/*3600u*//*60u*/1u};
+  unsigned constexpr aggregates_per_run{/*3600u*/60u/*1u*/};
 
   using timestamp_duration_t = std::chrono::milliseconds;
   int constexpr timestamp_width{10};
@@ -47,6 +47,8 @@ namespace cc {
   int constexpr exit_code_interrupt{130};
 
   std::chrono::milliseconds constexpr wait_interval_min{100};
+  std::chrono::milliseconds constexpr trigger_time_safety_offset{
+    sampling_interval / 2};
 
   int constexpr lpd433_receive_n_bits_min_default{8};
   int constexpr lpd433_receive_n_bits_max_default{32};
@@ -426,12 +428,18 @@ int main(int const argc, char const * const argv[]) {
             "date only.\n"
         "\n"
         "    `<time>` can e.g. have the format `HH:MM:SS`, which represents "
-            "local time.\n"
+            "local, non\n"
+        "    daylight savings time. (Note that the output format will be GMT, "
+            "however.)\n"
         "    `<date>` can e.g. have the format `YYYY-MM-DD`.\n"
         "\n"
-        "    The default hold time can be overridden with the `--hold-time` "
-            "option. This\n"
-        "    option only has an effect for timed triggers.\n"
+        "    If the environment variable is also controlled automatically by a "
+            "`shortly`\n"
+        "    process, there may be a default hold time (configured at compile "
+            "time) for\n"
+        "    the new setting. For timed triggers, this hold time can be "
+            "overridden with\n"
+        "    the `--hold-time` option.\n"
         "\n"
         "  control set-param [--<variable>=<value>...]\n"
         "    Set environment control parameters for subsequent `shortly` "
@@ -481,6 +489,12 @@ int main(int const argc, char const * const argv[]) {
     if (main_mode == MainMode::error) return cc::exit_code_error;
   } else if (main_mode == MainMode::print_config) {
     auto &out{std::cout};
+    auto constexpr trigger_time_safety_offset_in_seconds{(
+      static_cast<double>(
+        decltype(cc::trigger_time_safety_offset)::period::num) /
+      static_cast<double>(
+        decltype(cc::trigger_time_safety_offset)::period::den)) *
+      cc::trigger_time_safety_offset.count()};
     auto constexpr sampling_interval_in_seconds{(
       static_cast<double>(decltype(cc::sampling_interval)::period::num) /
       static_cast<double>(decltype(cc::sampling_interval)::period::den)) *
@@ -527,6 +541,8 @@ int main(int const argc, char const * const argv[]) {
             time_point_last_midnight)}
         << io::toml::TOMLWrapper{std::make_pair("time_point_next_shortly_run",
             time_point_next_shortly_run)}
+        << io::toml::TOMLWrapper{std::make_pair("trigger_time_safety_offset",
+            trigger_time_safety_offset_in_seconds), "s"}
         << "\n"
         << io::toml::TOMLWrapper{std::make_pair("sampling_interval",
             sampling_interval_in_seconds), "s"}
@@ -914,7 +930,7 @@ int main(int const argc, char const * const argv[]) {
         return cc::exit_code_interrupt;
 
     std::chrono::high_resolution_clock const sampling_clock{};
-    auto const time_point_filename{clock.now()};
+    auto const time_point_system_reference{clock.now()};
     auto const time_point_reference{sampling_clock.now()};
 
     std::array<std::ofstream, cc::n_sensors> file_streams;
@@ -954,7 +970,7 @@ int main(int const argc, char const * const argv[]) {
 
       auto const filename_prefix{[&](){
           auto const ctime_filename{
-            std::chrono::system_clock::to_time_t(time_point_filename)};
+            std::chrono::system_clock::to_time_t(time_point_system_reference)};
           char filename_prefix[21];
           std::strftime(filename_prefix, sizeof(filename_prefix),
             "%Y-%m-%d-%H-%M-%SZ", std::gmtime(&ctime_filename));
@@ -1019,6 +1035,11 @@ int main(int const argc, char const * const argv[]) {
     auto control_state{control::deserialize_or<control::control_state>(
       path_file_control_state_opt, "environment control state")};
 
+    // Initialize pending control triggers
+    auto triggers_pending{control::get_pending_control_triggers(
+      control::read_triggers(*main_opts["base-path"]), 
+      time_point_system_reference, duration_shortly_run)};
+
     // Initialize sensor IO
     io::Pi const pi{};
     if (io::errored(pi))
@@ -1059,6 +1080,7 @@ int main(int const argc, char const * const argv[]) {
     }
 
     // Start sampling
+    auto time_point_system_last{time_point_system_reference};
     for (unsigned aggregate_index{0u};
         aggregate_index < cc::aggregates_per_run;
         ++aggregate_index) {
@@ -1100,8 +1122,12 @@ int main(int const argc, char const * const argv[]) {
 
         if (write_control) sensors::write_fields((*control_out),
           control::as_sensor(control_state, clock), write_format);
+        auto const time_point_system_now{clock.now()};
+        auto overrides{control::trigger_tick(triggers_pending,
+          time_point_system_last, time_point_system_now)};
         control_state = control::control_tick(control_state, control_params,
-          xs, pi, lpd433_receiver_opt);
+          xs, pi, lpd433_receiver_opt, overrides);
+        time_point_system_last = time_point_system_now;
 
         auto const time_point_next_sample{time_point_reference +
           cc::sampling_interval * (aggregate_index * cc::samples_per_aggregate +

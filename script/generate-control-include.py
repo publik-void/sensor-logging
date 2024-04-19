@@ -342,18 +342,22 @@ def snippet_threshold_controller_tick(host_identifier, host_structs):
   str += indent(dedent(f'''\
     float const sampling_interval, control_state_{host_identifier} &succ,
     control_params_{host_identifier} const &params,
-    std::vector<std::tuple<lpd433_control_variable_{host_identifier}, bool,
+    std::vector<lpd433_control_variable_override<
     '''), 2)
-  str += indent(f'std::optional<float>>> const overrides) {{\n', 3)
+  str += indent(f'lpd433_control_variable_{host_identifier}>> &overrides) '
+    f'{{\n', 3)
   for threshold_spec in host_structs["thresholds"]:
     str += indent(f'std::optional<std::pair<bool, std::optional<float>>>\n')
     str += indent(f'override_{threshold_spec["target"]}{{}};\n', 2)
-  str += indent(f'for (auto &[var, to, hold_time_opt] : overrides) {{\n')
+  str += indent(f'for (auto &ovr : overrides) {{\n')
+  str += indent(f'if (ovr.done) continue;\n', 2)
   for threshold_spec in host_structs["thresholds"]:
-    str += indent(f'if (var == lpd433_control_variable_{host_identifier}'
-      f'::{threshold_spec["target"]})\n', 2)
+    str += indent(f'if (ovr.var == lpd433_control_variable_{host_identifier}'
+      f'::{threshold_spec["target"]}) {{\n', 2)
     str += indent(f'override_{threshold_spec["target"]} = '
-      f'{{to, hold_time_opt}};\n', 3)
+      f'{{ovr.to, ovr.hold_time_opt}};\n', 3)
+    str += indent(f'ovr.done = true;\n', 3)
+    str += indent(f'}}\n', 2)
   str += indent(f'}}\n')
   for threshold_spec in host_structs["thresholds"]:
     target, variable = threshold_spec["target"], threshold_spec["variable"]

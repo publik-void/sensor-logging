@@ -233,6 +233,23 @@ namespace control {
       return not target;
     } else return {};
   }
+
+  template <typename lpd433_control_variable_t>
+  struct lpd433_control_variable_override {
+    lpd433_control_variable_t var;
+    bool to;
+    std::optional<float> hold_time_opt = {};
+    bool done = false;
+  };
+
+  template <typename lpd433_control_variable_t>
+  std::optional<std::thread> set_lpd433_control_variable(auto const &pi,
+      auto &state, auto const &params,
+      lpd433_control_variable_override<lpd433_control_variable_t> &ovr) {
+    if (ovr.done) return {};
+    ovr.done = true;
+    return set_lpd433_control_variable(pi, state, params, ovr.var, ovr.to);
+  }
 } // namespace control
 
 #include "control.generated.cpp"
@@ -263,6 +280,21 @@ namespace control {
     bool daily;
     std::optional<float> hold_time;
   };
+
+  bool is_trigger_time_in_interval(control_trigger const &trigger,
+      std::chrono::system_clock::time_point const &start,
+      std::chrono::system_clock::time_point const &end) {
+    if (trigger.daily) {
+      auto const when_days_since_epoch{
+        std::chrono::floor<std::chrono::days>(trigger.when).time_since_epoch()};
+      auto const start_days_since_epoch{
+        std::chrono::floor<std::chrono::days>(start).time_since_epoch()};
+      auto const aligned_when {trigger.when  -  when_days_since_epoch};
+      auto const aligned_start{start         - start_days_since_epoch};
+      auto const aligned_end  {end           - start_days_since_epoch};
+      return aligned_start <= aligned_when and aligned_when <= aligned_end;
+    } else return start <= trigger.when and trigger.when <= end;
+  }
 
   auto when_gmtime(control_trigger const &self) {
     auto const when_ctime{std::chrono::system_clock::to_time_t(self.when)};
@@ -371,6 +403,51 @@ namespace control {
     return triggers;
   }
 
+  struct control_trigger_pending {
+    control_trigger trigger;
+    bool pending = true;
+  };
+
+  std::vector<control_trigger_pending> get_pending_control_triggers(
+      std::vector<control_trigger> const &triggers,
+      std::chrono::system_clock::time_point const &start_time,
+      auto const &duration_shortly_run) {
+    auto const end_time{start_time + duration_shortly_run};
+    std::vector<control_trigger_pending> triggers_pending{};
+    for (auto const &trigger : triggers) {
+      control_trigger const trigger_offset{trigger.var, trigger.to,
+        trigger.when + cc::trigger_time_safety_offset, trigger.daily,
+        trigger.hold_time};
+
+      if (is_trigger_time_in_interval(trigger_offset, start_time, end_time)) {
+        triggers_pending.emplace_back(trigger_offset);
+        if constexpr (cc::log_info) {
+          std::cerr << log_info_prefix << "Trigger pending with data: ";
+          control::write_as_csv(std::cerr, trigger_offset) << std::flush;
+        }
+      }
+    }
+    return triggers_pending;
+  }
+
+  std::vector<lpd433_control_variable_override<
+    lpd433_control_variable>> trigger_tick(
+      std::vector<control_trigger_pending> &triggers_pending,
+      std::chrono::system_clock::time_point const &last,
+      std::chrono::system_clock::time_point const &now) {
+    std::vector<lpd433_control_variable_override<
+      lpd433_control_variable>> overrides{};
+    for (auto &trigger_pending : triggers_pending) {
+      auto const &trigger{trigger_pending.trigger};
+      if (trigger_pending.pending and
+          is_trigger_time_in_interval(trigger, last, now)) {
+        overrides.emplace_back(trigger.var, trigger.to, trigger.hold_time);
+        trigger_pending.pending = false;
+      }
+    }
+    return overrides;
+  }
+
   // NOTE: The code below could probably be written or even generated with all
   // kinds of abstractions and modularity and whatnot. However, since this is
   // just a small-scale hobby project and as this is code that is highly
@@ -381,16 +458,22 @@ namespace control {
   // hard-coding and compiling.
   // Edit: Well, in the end I ended up with a bunch of generated code after all.
 
-  auto control_tick(auto const &state, auto const &, auto const &, auto const &,
-      std::optional<io::LPD433Receiver> const &) {
-    return state;
+  auto control_tick(auto const &state, auto const &params, auto const &,
+      auto const &pi, std::optional<io::LPD433Receiver> const &,
+      auto &overrides) {
+    auto succ{state};
+    for (auto &ovr : overrides)
+      set_lpd433_control_variable(pi, succ, params, ovr);
+    return succ;
   }
 
   auto control_tick(
       control_state_lasse_raspberrypi_1 const &state,
       control_params_lasse_raspberrypi_1 const &params,
       auto const &xs, auto const &pi,
-      std::optional<io::LPD433Receiver> const &lpd433_receiver_opt) {
+      std::optional<io::LPD433Receiver> const &lpd433_receiver_opt,
+      std::vector<lpd433_control_variable_override<
+        lpd433_control_variable_lasse_raspberrypi_1>> &overrides) {
     float constexpr sampling_rate{
       static_cast<float>(decltype(cc::sampling_interval)::period::den) / (
       static_cast<float>(decltype(cc::sampling_interval)::period::num) *
@@ -402,17 +485,11 @@ namespace control {
     auto const sensor_update{update_from_sensors(xs, succ, params)};
     auto const lpd433_update{
       update_from_lpd433(pi, lpd433_receiver_opt, succ, sampling_interval)};
-    std::vector<std::tuple<lpd433_control_variable_lasse_raspberrypi_1, bool,
-      std::optional<float>>> overrides{/*TODO: timer updates*/};
     if (lpd433_update.has_value()) overrides.emplace_back(
-      lpd433_update.value().first, lpd433_update.value().second,
-      std::optional<float>{});
+      lpd433_update.value().first, lpd433_update.value().second);
     threshold_controller_tick(pi, sampling_interval, succ, params, overrides);
-
-    // <700ppm, >90%
-
-
-    //set_ventilation(pi, succ, params, not succ.ventilation);
+    for (auto &ovr : overrides)
+      set_lpd433_control_variable(pi, succ, params, ovr);
 
     return succ;
   }

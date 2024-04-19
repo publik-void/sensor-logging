@@ -48,6 +48,6 @@ Sample `crontab` entries:
 
 == To-do list
 
-* Think about safety and robustness in terms of power outages
-* Check that TOML output is usable
-* Write a small web server that shows a plot of the latest data?
+* TODO: Think about safety and robustness in terms of power outages
+* TODO: Check that TOML output is usable
+* TODO: Write a small web server that shows a plot of the latest data?
