@@ -3,6 +3,7 @@ Lasse Schlör
 
 This readme file needs to be updated. I am leaving this text here as a
 placeholder instead of the previous out-of-date text.
+// TODO
 
 == Setup
 
@@ -50,3 +51,4 @@ Sample `crontab` entries:
 
 * TODO: Think about safety and robustness in terms of power outages
 * TODO: Write a small web server that shows a plot of the latest data?
+* TODO: Other to-do marks in the code
