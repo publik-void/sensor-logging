@@ -32,9 +32,9 @@ def snippet_struct_declaration(host_identifier, struct_fields, type_identifier):
 def snippet_apply_opts(host_identifier, struct_fields, type_identifier):
   str = f'control_{type_identifier}_{host_identifier} apply_opts(\n'
   str += indent(f'std::unordered_map<std::string, std::optional<std::string>> '
-    f'&opts,\n', 2)
+    f'&{"opts" if struct_fields else ""},\n', 2)
   str += indent(f'control_{type_identifier}_{host_identifier} const '
-    f'&{type_identifier} = {{}}) {{\n', 2)
+    f'&{type_identifier if struct_fields else ""} = {{}}) {{\n', 2)
   str += indent(f'return {{{{}},\n')
   for field in struct_fields:
     name_hyphenized = field["name"].replace("_", "-")
