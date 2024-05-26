@@ -42,9 +42,18 @@ the following places:
 * the overloaded function `control_tick` in `src/control.cpp`
 * `script/control-structs.json`
 
+To allow the `pi` user to run processes with higher than normal priority (if
+desired), a configuration file can be installed as follows. A reboot may be
+required for it to take effect.
+[source, sh]
+----
+sudo cp aux/90-pi-priority.conf /etc/security/limits.d/
+----
+
 Sample `crontab` entries:
 ----
-# (TODO)
+13,28,43,58 * * * * nice -n -15 /home/pi/sensor-logging/build/sensor-logging --base-path=/home/pi/sensor-logging shortly
+30 4 * * * /home/pi/sensor-logging/build/sensor-logging --base-path=/home/pi/sensor-logging daily
 ----
 
 == To-do list
