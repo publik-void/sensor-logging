@@ -168,8 +168,8 @@ namespace util {
       if (status.type() != std::filesystem::file_type::regular) {
         if (status.type() == std::filesystem::file_type::not_found or
             status.type() == std::filesystem::file_type::unknown) {
-          if constexpr (cc::log_errors) std::cerr << log_error_prefix <<
-            path_file << " is nonexistent or not readable." << std::endl;
+          if constexpr (cc::log_info) std::cerr << log_info_prefix <<
+            path_file << " is non-existent or not readable." << std::endl;
         } else {
           if constexpr (cc::log_errors) std::cerr << log_error_prefix <<
             path_file << " is not a regular file." << std::endl;
@@ -205,7 +205,7 @@ namespace util {
           type != std::filesystem::file_type::character and
           type != std::filesystem::file_type::fifo) {
         if constexpr (cc::log_errors) std::cerr << log_error_prefix
-          << path_file << " is either of the wrong type or its nonexistence "
+          << path_file << " is either of the wrong type or its non-existence "
             "or type could not be verified." << std::endl;
         return false;
       }
