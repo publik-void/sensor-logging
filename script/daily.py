@@ -211,6 +211,8 @@ def as_toml(x, shifts = 0, comment = None, contd = False):
     s = time.strftime("%Y-%m-%d %H:%M:%SZ", x) + commented(comment)
   elif isinstance(x, datetime.date):
     s = x.isoformat() + commented(comment)
+  elif isinstance(x, bool):
+    s = f"{'true' if x else 'false'}" + commented(comment)
   elif isinstance(x, numbers.Number):
     s = f"{x}" + commented(comment)
   else:
@@ -282,8 +284,8 @@ def daily(p, f = None, time_point_startup = time.gmtime(), pathss = None,
   # Log startup and config
   log_identifier = f"{p['localhostname']}.{time_identifier}"
   f.write(("\n" if log_file_exists else "") +
-    f"[{log_identifier}] # New log started here\n" +
-    as_toml({"time_point_startup": time_point_startup}) +
+    f"[{log_identifier}.startup] # New log started here\n" +
+    as_toml({"time_point": time_point_startup}) +
     "\n" +
     indent(f"[{log_identifier}.version_strings]\n", 1) +
     as_toml(version_strings, 1) +
@@ -303,7 +305,7 @@ def daily(p, f = None, time_point_startup = time.gmtime(), pathss = None,
 
   # Prepare pattern matcher
   pattern = ("([0-9]{4})-([0-9]{2})-([0-9]{2})-([0-9]{2})-([0-9]{2})-([0-9]{2}"
-    f")-({'|'.join(p['sensors_physical_instance_names'])})."
+    f")Z-({'|'.join(p['sensors_physical_instance_names'])})."
     f"{p['file_extension']}")
   cp = re.compile(pattern)
 
@@ -416,9 +418,8 @@ def daily(p, f = None, time_point_startup = time.gmtime(), pathss = None,
               try:
                 tic = time.time()
                 for filepath in filepaths:
-                  # TODO: Enable deletion of original data files
                   # print(f"os.remove(\"{filepath}\")")
-                  # os.remove(filepath)
+                  os.remove(filepath)
                   pass
                 toc = time.time()
               except Exception as e:
@@ -433,8 +434,8 @@ def daily(p, f = None, time_point_startup = time.gmtime(), pathss = None,
 
   time_point_finish = time.gmtime()
   f.write("\n"
-    f"[{log_identifier}]\n" +
-    as_toml({"time_point_finish": time_point_finish}, 0,
-      {"time_point_finish": "Log finished here"}))
+    f"[{log_identifier}.finish]\n" +
+    as_toml({"time_point": time_point_finish}, 0,
+      {"time_point": "Log finished here"}))
 
 daily(config)

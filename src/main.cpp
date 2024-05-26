@@ -1115,9 +1115,11 @@ int main(int const argc, char const * const argv[]) {
             }, aggregate, state);
 
           util::for_constexpr([&](auto const &a, std::ostream * const &out,
-          bool const &print_newline){sensors::write_fields(
-              (*out), a, write_format, {}, not print_newline);
-            }, aggregate, outs, print_newlines);
+            auto const &name, bool const &print_newline){
+              sensors::write_fields(
+                (*out), a, write_format, name, not print_newline); },
+            aggregate, outs, cc::sensors_physical_instance_names,
+            print_newlines);
         }
 
         if (write_control) sensors::write_fields((*control_out),
