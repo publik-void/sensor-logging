@@ -59,5 +59,9 @@ Sample `crontab` entries:
 == To-do list
 
 * TODO: Think about safety and robustness in terms of power outages
+* TODO: Write a script (probably Python) that can take time ranges and column
+  names as inputs, then reads relevant shortly files (in CSV format, maybe
+  additionally TOML) and daily archives, and outputs the selected subset of data
+  (probably as CSV, maybe additionally TOML).
 * TODO: Write a small web server that shows a plot of the latest data?
 * TODO: Other to-do marks in the code
