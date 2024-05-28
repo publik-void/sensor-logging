@@ -58,7 +58,8 @@ Sample `crontab` entries:
 
 == To-do list
 
-* TODO: When using a remote control to change LPD433 variables, there is no beep
+* TODO: As of writing this, in my current setup, on `lasse-raspberrypi-0`, the
+  LPD433 receiver does not seem to work
 * TODO: Think about safety and robustness in terms of power outages
 * TODO: Write a script (probably Python) that can take time ranges and column
   names as inputs, then reads relevant shortly files (in CSV format, maybe
