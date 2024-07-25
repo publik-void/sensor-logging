@@ -191,7 +191,8 @@ def as_toml(x, shifts = 0, comment = None, contd = False):
     _as_toml = lambda k, v: as_toml(v, shifts,
         comment[k] if isinstance(comment, dict) else None, True)
     # NOTE: Unsafe, because it never quotes keys
-    s = "".join([f"{k} = {_as_toml(k, v)}\n" for k, v in x.items()])
+    s = "".join([f"{k} = {_as_toml(k, v)}\n"
+      for k, v in x.items() if not v is None])
   elif isinstance(x, list):
     s = "["
     if bool(x):
